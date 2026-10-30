@@ -34,6 +34,8 @@ Nếu có `campaign_must_run`: khung giờ cam kết đầy đủ (CD002: `[(0,2
 Phần giữ của mỗi SKU có tồn = phần giữ riêng + Σ `qty ×` phần giữ của combo chứa nó (9 combo giữ 9 nồi + 9 giấy lót), trừ đi lượng đã bán trong khung flash từ đầu ngày tới `start`. Phần giữ chỉ có hiệu lực trong ngày cam kết, trước khi khung flash cuối cùng kết thúc. Sau đó phần này được bán như hàng thường.
 
 ### Q6. Giá trị hàng dư V theo đúng mặc định plan (0,5 × giá vốn) → CD002 không có thanh vùng
+> **Đã thay (sau M3-whatif):** V mặc định = 0, định nghĩa là giá trị ròng so với giá vốn. Xem mục "Sau sửa lỗi M3-whatif" cuối file.
+
 Với V = 227.500đ/nồi, lớn hơn m = 9.280đ, công thức 05 §7.1 cho `m ≤ V`: "giữ hàng luôn lợi hơn bán", nên `zone_bar = null` kèm lý do "Giữ hàng lợi hơn bán: mỗi sp còn lại đáng 53.640đ, bán chỉ lãi 12.407đ" (tính bình quân theo chiến dịch). Ví dụ JSON ở 08 có thanh vùng cho CD002 nhưng đó chỉ là minh họa. Ngày thường của nồi chiên cũng vậy (m = 149.200đ < V = 227.500đ). Mặc định V = 0,5 × giá vốn không khớp với cách đọc "V = 0 nghĩa là hàng dư vô giá trị" của ví dụ trang 10. **Cần chủ plan chốt**: đặt V mặc định = 0 (cách đọc trang 10) hoặc theo kế hoạch bán tiếp. Kết luận CD002 không đổi vì mọi hành động đều bán hết nồi.
 
 ### Q7. Thanh vùng trong trường hợp thật (05 §7.2), nhiều SKU
@@ -122,3 +124,71 @@ Lúc bắt đầu, `app.ads_effect` chưa có gì, nên simulator viết theo `I
 
 - **Test hiệu năng tách khỏi lượt chạy mặc định.** `test_performance` (05 §5.5: 50 chiến dịch < 2 giây) đo được 1,2–1,5 giây khi máy rảnh, nhưng 2,7–4,3 giây khi máy dev đang chạy các dự án khác. Giữ nguyên ngưỡng, gắn marker `perf` và loại khỏi `addopts` (`-m 'not perf'`) để CI không đỏ ngẫu nhiên theo tải máy. Đo bằng `uv run pytest -m perf` khi máy rảnh.
 - **iROAS CD002 lệch phía an toàn.** Agent ads ước lượng 4,49 [3,39–5,59] so với thật 5,27 (hòa vốn ngày thường 4,96), nên ngày thường app có thể nói "ads lỗ nhẹ" ngược đáp án. Kết luận 11.11 (schedule_hours) không phụ thuộc điểm này vì biên lãi 11.11 chỉ 9.280đ. Ví dụ "ngày thường thì chạy tiếp thắng" phải kiểm lại bằng mô phỏng trước khi đưa vào kịch bản demo.
+
+## Sau sửa lỗi M3-whatif (30/10)
+
+Sửa 6 điểm của [M3-whatif.md](M3-whatif.md) §3 và §5. Mỗi điểm có test hồi quy.
+
+### Q14. Các thay đổi
+
+| # | Lỗi | Sửa | Test |
+|---|---|---|---|
+| 1 | V mặc định `0,5 × giá vốn` sai kinh tế (nồi chiên 227.500đ > lãi ngày thường 149.200đ) | `leftover_value_per_unit` mặc định **0**. Định nghĩa: giá trị **ròng** của 1 sp dư so với giá vốn (thu hồi sau hạn − giá vốn − chi phí bán tiếp), cùng gốc với `m`. Khoảng: **−giá vốn ≤ V ≤ giá bán**. Âm được, khi hàng dư thu hồi dưới giá vốn. `validate_value`/`set_parameter` thêm `lower=`. API `PUT /parameters` chặn dưới theo giá vốn SKU. `/scenarios/run` chặn override V ngoài [−giá vốn lớn nhất, giá bán]. `GET /parameters`: `min` thành `float \| null`, thêm `min_rule` (tùy chọn). `BreakevenRequest.leftover_value_per_unit_vnd` nhận số âm. Điều kiện đổi theo V tìm trong [−giá vốn, giá bán] | `test_leftover_value_is_net_of_cost_default_zero`, `test_parameters_list`, `test_put_parameter_roles_and_ranges`, `test_scenarios` (V = −9 tr bị chặn) |
+| 2 | Runner-up trùng hệt best (pause ≡ pause_until_restock) → p = 0 giả | `select_actions` bỏ hành động có J, số bán, chi **trùng từng mẫu** với một hành động xếp trên. `Selection.duplicate_of` ghi lại | `test_identical_actions_never_runner_up`, `test_identical_twin_is_not_runner_up` |
+| 3 | `sell_target`: runner-up là hành động trượt mục tiêu, vẫn tính p như cùng hạng | Có ≥ 2 hành động đạt: runner-up lấy trong số đạt. Chỉ 1 hành động đạt: `status = recommend`, `runner_up` = hành động tốt nhất **không** đạt (để tham chiếu), `p_best_beats_runner_up = null`, `expected_gain_vnd = null`. Thêm `runner_up_meets_goal = false` và `goal_cost_vnd = E[J(runner_up)] − E[J(best)]` (tùy chọn). Lý do ghi: "Chỉ X đạt mục tiêu bán đủ N sp (71%); phương án tốt nhất không đạt là Y (43%): đạt mục tiêu tốn thêm khoảng …". Không tính điều kiện đổi (kết luận do mục tiêu quyết). Áp dụng cả `clear_stock` | `test_sell_target_runner_up_from_goal_meeting_actions`, `test_sell_target_only_one_action_meets_goal` |
+| 4 | Ngưỡng 5% × \|E[J(best)]\| phình vì V × tồn | Mẫu số = E[J(best) − V·tồn cuối(best)], tức đóng góp − chi − phạt. Lý do: phần V × tồn định giá hàng **không** bán trong horizon. Nó tỷ lệ với lượng tồn, không với cái đang được quyết. Chọn cách này thay cho chênh tuyệt đối để giữ nguyên ý nghĩa "5% của kết quả kinh doanh". Với V = 0 mặc định thì hai cách như nhau | `test_min_gain_ignores_leftover_term` |
+| 5 | ZoneBar nói "pause tốt hơn" khi pause bị cấm | Thanh vẫn trả về. `verdict` giữ nghĩa cũ (so tiền continue vs pause). Thêm 3 trường tùy chọn: `pause_feasible` (mặc định `true`), `pause_violations`, `verdict_note`. Khi pause bị cấm: `pause_feasible = false`, `verdict_note` = "Tạm dừng bị cấm vì đã cam kết với sàn trong khung flash sale. Về tiền, tạm dừng lợi hơn chạy tiếp: thanh cho thấy cái giá của ràng buộc, không phải đề xuất tạm dừng". Câu này cũng được thêm vào `reasons` | `test_zone_bar_never_says_pause_when_pause_blocked` |
+| 6 | Khóa cache phụ thuộc offset của `start` (API tự đổi sang UTC) | `service._key` chuẩn hóa `start` và `data_as_of` về UTC. Override lấy bản đã chuẩn hóa (`0` ≡ `0.0`). API vẫn đổi UTC, giờ thừa nhưng vô hại | `test_service_key.py` |
+
+**Cho agent web:**
+- Đọc `zone_bar.pause_feasible`. Nếu `false`, hiện `zone_bar.verdict_note` **thay cho** câu verdict, không hiện "Pause tốt hơn". `compareLogic.pauseBlockedLine` hiện dựa vào `verdict === 'pause_better'` + `results[pause].feasible`. Vẫn chạy được, nhưng nên dùng `pause_feasible` / `verdict_note`.
+- `recommendation.runner_up_meets_goal === false`: không hiện "X lợi hơn Y …" hay xác suất. Hiện "Chỉ X đạt mục tiêu; Y không đạt: đạt mục tiêu tốn thêm `goal_cost_vnd`". `expected_gain_vnd` lúc này là `null`, nên headline cũ tự rơi về `recommendNoRunner`.
+- Đọc lại từ DB: `runner_up_meets_goal` được suy ra (recommend + có runner-up + `p_best` null). `goal_cost_vnd` không được lưu (là `null` khi đọc lại), nhưng câu lý do vẫn có số.
+- Tham số V: nhãn mới "Giá trị ròng 1 sp còn lại sau hạn, so với giá vốn (V)", mặc định 0, có thể âm. Gợi ý UI: "0đ = bán sau vẫn hòa vốn".
+
+### Kết quả mới (V = 0 mặc định)
+
+Chạy `run_simulation` trực tiếp trên DB riêng, dựng như `eval/demo_whatif.build_db`. Seed 20261111, 1.000 mẫu, `persist=False`, `use_cache=False`. "vs continue" = E[J(best)] − E[J(continue)]. "Cũ" là số trong M3-whatif.md (V mặc định cũ, trừ chỗ ghi khác).
+
+| # | Biến thể | Best (status, p) | Runner-up, chênh | vs continue | ZoneBar (x*, p10–p90, verdict) | Điều kiện đổi | Cũ |
+|---|---|---|---|---|---|---|---|
+| 1 | CD002 11.11 01:00 `profit` | **schedule_hours** (recommend, 1,00) | reduce 50%, +1,23 tr | +3,99 tr | **Có:** x* = 0; 4,04–5,00; `pause_better`, `pause_feasible = false` + `verdict_note` | V ≤ −252k/sp → reduce 50% | schedule (recommend 1,00), +4,08 tr. Không có thanh |
+| 2a | Hàng về sớm 1 ngày (−1) | schedule_hours (recommend, 1,00) | reduce 50%, +0,91 tr | +3,52 tr | x* = 0; 4,87–9,04; pause bị cấm | V ≤ −25k/sp | schedule, +12,69 tr (phồng vì V) |
+| 3b | V = 20.000đ | schedule_hours (recommend, 1,00) | reduce 50%, +1,33 tr | +4,13 tr | Không ("giữ hàng lợi hơn bán": V 20k > m̄ 12,4k) | — | như cũ |
+| 4f | `sell_target` N = 95 | **reduce 50%** (recommend, 1,00) | reduce 30% (đạt, 87%), +1,10 tr | +2,76 tr | thanh, pause bị cấm | không | reduce 50%. schedule 68% < 80% |
+| 4g | `sell_target` N = 97 | **reduce 30%** (recommend, 1,00) | continue (đạt, 83%), +1,66 tr | +1,66 tr | thanh, pause bị cấm | không | reduce 30% |
+| 4a | N = 100 | `none_meets_goal` (cao nhất continue 71%) | — | — | — | — | như cũ |
+| 4h | N = 100, xác suất 70% | **continue** (**recommend**, p = null) | schedule (không đạt, 43%), `goal_cost` = **3,99 tr** | 0 | thanh, pause bị cấm | — | continue `undetermined`, p = 0,00 giả |
+| 5 | Bỏ ràng buộc flash | **pause** (**recommend**, 1,00) | reduce 50%, +2,37 tr | +5,13 tr | x* = 0; `pause_better`, pause được phép | V ≤ −313k | pause `undetermined` (runner-up là bản sao) |
+| 5c | Hạn tới hết 12/11 | schedule_hours (**recommend**, 0,99) | reduce 50%, +1,17 tr | +4,41 tr | thanh, pause bị cấm | V ≤ −104k | `undetermined` (ngưỡng 4,6 tr do V) |
+| 6b | CD002 ngày thường 06/11 | reduce 50% (undetermined, 0,75) | schedule, +97k | +384k | x* = 1,44; 1,08–1,96; `undetermined` | V ≤ −40k → schedule | pause (undetermined), "giữ hàng lợi hơn" |
+| 7b | CD004 cốc meme 06/11 | pause (undetermined, 0,81) | reduce 50%, +28k | +78k | x* = 0,23; 0,12–0,54; `undetermined` | nhu cầu +89% | pause (0,92), +96k |
+| 8a | CD020 đèn lồng 06/11 | pause (undetermined, 0,91) | reduce 50%, +46k | +107k | x* = 0,65; 0,67–1,21; **`pause_better`** | V ≤ −24k | như cũ ở V = 0 |
+| 9 | CD023 hộp quà 11.11 | reduce 50% (undetermined, 0,67) | reduce 30%, +62k | +362k | x* = 6,55; 3,74–5,87; **`continue_better`** | V ≤ −13k; nhu cầu +18% | như cũ ở V = 0 |
+
+**Xác nhận:**
+- **CD002 11.11:** vẫn `schedule_hours`, `recommend`, p = 1,00. Pause và pause_until_restock vẫn `campaign_must_run`, không khả thi.
+- **CD002 11.11 giờ có ZoneBar:** x* = 0, khoảng 4,04–5,00 sp/giờ, `verdict = pause_better` (so tiền), `pause_feasible = false`, kèm `verdict_note` "Tạm dừng bị cấm…".
+- **Giá của cam kết flash:** E[J] pause 1,23 tr − schedule 0,09 tr = **1,14 tr** (cũ 1,27 tr).
+- **"Chỉ tiêu 97 sp" vẫn đổi kết luận:** schedule (57%) → **reduce 30%** (81%). Tốn E[J(schedule)] − E[J(reduce 30%)] = 0,09 − (−2,24) = **2,33 tr** (cũ 2,40 tr). Runner-up giờ là continue (cũng đạt), nên p = 1,00 có nghĩa thật.
+- N = 95 → reduce 50%, tốn 0,09 − (−1,14) = **1,23 tr**.
+- Số E[J] tuyệt đối giờ "sạch": không còn phần V × tồn. CD002 11.11 continue = −3,90 tr, schedule = +0,09 tr.
+
+**Quét 49 chiến dịch, V = 0 mặc định** (18 bị chặn vì thiếu giá vốn; còn 31):
+
+| Bối cảnh | pause | reduce | schedule | continue | `recommend` | Thanh |
+|---|---|---|---|---|---|---|
+| 06/11 cả ngày | **16** (cũ 27) | 9 | 1 | 5 | CD008, CD033 continue (xem dưới) | 27 `undetermined`, 1 `pause_better` (CD020) |
+| 11.11 01:00 | 9 (cũ 25) | 17 | 2 | 3 | CD002 schedule, CD015 pause, CD007 / CD033 continue | 24 `undetermined`, 2 `pause_better`, 1 `pause_better` + pause bị cấm (CD002), 1 `continue_better` (CD023) |
+
+- Ngày thường không còn "27/31 pause chỉ vì giữ hàng". Còn 16/31 pause, gần hết `undetermined` (chiến dịch nhỏ, chênh < 200k).
+- CD007, CD008, CD033 không chi ads trong horizon, nên mọi hành động trùng hệt nhau. Sau khi bỏ bản sao (lỗi 2), lượt quét ra "recommend continue" không có runner-up. Đã sửa ngay sau lượt quét: không có runner-up vì mọi phương án trùng nhau → `undetermined`, lý do "Các phương án cho kết quả như nhau…" (`test_all_actions_identical_is_undetermined`). Quét không chạy lại sau sửa này.
+
+### What-if cho sân khấu (số mới)
+
+- **Nên dùng:** "Chỉ tiêu 97 sp": đổi từ "Chỉ chạy khung giờ" sang "Giảm ngân sách 30%". Đạt 81% so với 57%. Tốn **2,33 tr**. Runner-up là "Chạy tiếp", cũng đạt, nên p = 1,00 có nghĩa thật.
+- **Nên dùng:** "Cam kết flash tốn bao nhiêu": pause 1,23 tr vs schedule 0,09 tr → **~1,1 tr**. Thanh vùng 11.11 giờ hiện, kèm câu "Tạm dừng bị cấm…".
+- **Nên dùng:** "Hàng về sớm 1 ngày": kết luận không đổi, schedule vẫn hơn chạy tiếp 3,5 tr.
+- **Nên dùng:** "Chỉ tiêu 100 sp, chấp nhận 70%": giờ ra `recommend` continue, "đạt mục tiêu tốn thêm ~4,0 tr".
+- **Nên dùng:** CD020 cho thanh "nên dừng".
+- **Không nên:** đọc thanh CD002 11.11 như "nên tạm dừng". Không nói "ngày thường app khuyên chạy tiếp nồi chiên": app ra giảm 50%, `undetermined`. Không dùng CD004 cho thanh (`undetermined`).

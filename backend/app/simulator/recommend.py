@@ -5,8 +5,13 @@
    ``none_meets_goal``.
 3. ``best``, ``runner_up``; ``p = mean_s[score_s(best) > score_s(runner_up)]`` on the same
    samples, ``gain = E[J(best)] − E[J(runner_up)]``.
-4. ``p ≥ decision_min_prob`` and ``gain ≥ max(decision_min_gain_vnd, 5 %·|E[J(best)]|)`` →
-   ``recommend``, else ``undetermined`` (best / runner-up / zone bar / flips still shown).
+   Actions with results identical to a better-ranked one are skipped (``duplicate_of``).
+   Only one action meets the goal → ``recommend``, ``runner_up`` = best action missing the
+   goal (reference), ``p`` / ``gain`` = None, ``goal_cost_vnd`` = what the goal costs.
+4. ``p ≥ decision_min_prob`` and ``gain ≥ max(decision_min_gain_vnd, 5 %·|E[J(best)]|)``,
+   J without the leftover term ``V·stock_end`` → ``recommend``, else ``undetermined``
+   (best / runner-up / zone bar / flips still shown). Pause infeasible → zone bar carries
+   ``pause_feasible = False`` and ``verdict_note``.
 5. ``confidence`` = min(forecast labels of the SKUs making ≥ 80 % of expected revenue,
    iROAS label, data label); a scenario parameter ≠ 0 caps it at ``reference``.
 6. ``reasons``: short Vietnamese sentences with numbers.
@@ -183,7 +188,7 @@ def zone_bar(run: SimRun, resim: Resim) -> tuple[ZoneBar | None, str | None]:
     q = np.quantile(rate, [0.1, 0.5, 0.9])
     pi_c = float(np.mean(c.j))
     alts = []
-    if v_bar > 0:
+    if v_bar != 0:
         alts.append((0.0, pi_c - float(np.mean(c.leftover_value))))
     bar, point = make_zone_bar(
         pi_c,
@@ -204,7 +209,28 @@ def zone_bar(run: SimRun, resim: Resim) -> tuple[ZoneBar | None, str | None]:
         bar.inputs = uniform_inputs(
             bar, pi_c, n, float(inp.T), m_bar, v_bar, sold_c, float(np.mean(p.spend))
         )
+        if not p.feasible:
+            mark_pause_blocked(bar, [c for c, _ in p.violations])
     return bar, None
+
+
+def mark_pause_blocked(bar: ZoneBar, violations: Sequence[str]) -> None:
+    """Pause is not allowed: the bar still shows the money comparison, but must never read
+    as "pause tốt hơn" (``verdict_note`` replaces the verdict sentence on the UI)."""
+    bar.pause_feasible = False
+    bar.pause_violations = list(violations)
+    why = (
+        "vì đã cam kết với sàn trong khung flash sale"
+        if MUST_RUN in violations
+        else "vì vi phạm ràng buộc"
+    )
+    if bar.verdict == "pause_better":
+        bar.verdict_note = (
+            f"Tạm dừng bị cấm {why}. Về tiền, tạm dừng lợi hơn chạy tiếp: thanh cho thấy cái giá"
+            " của ràng buộc, không phải đề xuất tạm dừng"
+        )
+    else:
+        bar.verdict_note = f"Tạm dừng bị cấm {why}: thanh chỉ để so sánh"
 
 
 def uniform_inputs(
@@ -234,7 +260,7 @@ def uniform_inputs(
         rate_continue_per_hour=sold_c / hours,
         pause_rate_interval=bar.interval,
         leftover_value_per_unit_vnd=v,
-        alt_leftover_values=[0.0] if v > 0 else [20_000.0],
+        alt_leftover_values=[0.0] if v != 0 else [20_000.0],
     )
     check = uniform_breakeven(req.case()).zone_bar
     if check is None or abs(check.threshold - bar.threshold) > 1e-6 * max(1.0, bar.threshold):
@@ -274,8 +300,9 @@ def flip_conditions(
         f0 = base - dval
         root = linear_root(f0, dleft)
         hi = max(float(np.max(s.price)) for s in js)
+        lo = -max(s.unit_cost for s in js)  # V net of cost: −cost = worthless leftover
         v_now = float(np.mean([s.leftover_value for s in js]))
-        if root is not None and 0 <= root <= hi and abs(root - v_now) > 1:
+        if root is not None and lo <= root <= hi and abs(root - v_now) > 1:
             up = root > v_now
             out.append(
                 FlipCondition(
@@ -284,7 +311,8 @@ def flip_conditions(
                     base_value=v_now,
                     unit="đ/sp",
                     text=(
-                        f"Nếu hàng dư còn giá trị từ {format_vnd(round(root))}/sp trở "
+                        f"Nếu hàng dư còn giá trị (ròng, so với giá vốn) từ"
+                        f" {format_vnd(round(root))}/sp trở "
                         f"{'lên' if up else 'xuống'} → {after}"
                     ),
                 )
@@ -432,8 +460,15 @@ def build_recommendation(
     runner = run.runs[sel.ranked[1]] if len(sel.ranked) > 1 else None
     p_best: float | None = None
     gain: float | None = None
+    goal_cost: float | None = None
+    # runner-up misses the goal (best is the only action meeting it): decided by the goal,
+    # the runner-up is a reference, not a rival → no p, no "đủ chênh lệch" test
+    rivals = sel.runner_up_meets_goal
     status: Literal["recommend", "undetermined"] = "undetermined"
-    if runner is not None:
+    if runner is not None and not rivals:
+        goal_cost = float(np.mean(runner.j) - np.mean(best.j))
+        status = "recommend"
+    elif runner is not None:
         sb = best.units_sold if sel.metric == "units_sold" else best.j
         sr = runner.units_sold if sel.metric == "units_sold" else runner.j
         p_best = float(np.mean(sb > sr))
@@ -442,13 +477,17 @@ def build_recommendation(
         if sel.metric == "units_sold":
             ok = p_best >= min_p and float(np.mean(sb - sr)) >= 1.0
         else:
-            need = max(params.num("decision_min_gain_vnd"), 0.05 * abs(float(np.mean(best.j))))
-            ok = p_best >= min_p and gain >= need
+            ok = p_best >= min_p and gain >= min_gain_needed(
+                best, params.num("decision_min_gain_vnd")
+            )
         status = "recommend" if ok else "undetermined"
     else:
-        status = "recommend"
+        # every other feasible action has the same results (e.g. ads spend nothing in the
+        # horizon, so continue ≡ pause): nothing to recommend, the choice does not matter
+        all_same = bool(sel.duplicate_of)
+        status = "undetermined" if all_same else "recommend"
     bar, bar_reason = zone_bar(run, resim)
-    partner = runner
+    partner = runner if rivals else None
     if sel.metric == "units_sold":
         # clear_stock ranks by units; the money trade-off that can flip is "clear vs keep"
         keep = run.by_key().get("pause")
@@ -498,8 +537,17 @@ def build_recommendation(
                 f"{best.action.label_vi()} lợi hơn {runner.action.label_vi()} khoảng"
                 f" {format_vnd(round(gain))} (xác suất {p_best:.0%})"
             )
+    if runner is not None and goal_cost is not None:
+        reasons.append(only_one_meets_goal_reason(run, sel, best, runner, goal_cost))
+    if runner is None and status == "undetermined":
+        reasons.append(
+            "Các phương án cho kết quả như nhau (ads gần như không chi trong khoảng này):"
+            " chọn phương án nào cũng vậy"
+        )
     if bar_reason:
         reasons.append(bar_reason)
+    if bar is not None and bar.verdict_note:
+        reasons.append(bar.verdict_note)
     if status == "undetermined" and runner is not None:
         reasons.append("Chênh lệch chưa đủ rõ để đề xuất chắc chắn")
     if not flips and partner is not None and with_flips:
@@ -519,8 +567,39 @@ def build_recommendation(
         reasons=reasons,
         inputs_ref=ref,
         created_at=utcnow(),
+        runner_up_meets_goal=rivals,
+        goal_cost_vnd=round(goal_cost) if goal_cost is not None else None,
     )
     return rec, sel
+
+
+def min_gain_needed(best: ActionRun, floor_vnd: float) -> float:
+    """05 §9 step 4: ``max(decision_min_gain_vnd, 5 % · |E[J(best)]|)`` with ``J`` taken
+    WITHOUT the leftover term ``V · stock_end``. That term values stock nobody sells in the
+    horizon (it scales with the stock size, not with what is at stake in the decision), so
+    with V ≠ 0 it inflated the bar: CD002 to 12/11 needed 4,6 tr of a 2,2 tr gain at p = 1."""
+    operating = float(np.mean(best.j - best.leftover_value))
+    return max(floor_vnd, 0.05 * abs(operating))
+
+
+def only_one_meets_goal_reason(
+    run: SimRun, sel: Selection, best: ActionRun, runner: ActionRun, goal_cost: float
+) -> str:
+    inp = run.inputs
+    i_b = run.runs.index(best)
+    i_r = run.runs.index(runner)
+    lb, lr = best.action.label_vi(), runner.action.label_vi()
+    if sel.kind == "sell_target":
+        pb, pr = sel.p_target[i_b], sel.p_target[i_r]
+        head = (
+            f"Chỉ {lb} đạt mục tiêu bán đủ {inp.goal.target_units} sp"
+            f" ({pb or 0:.0%}); phương án tốt nhất không đạt là {lr} ({pr or 0:.0%})"
+        )
+    else:
+        head = f"Chỉ {lb} đạt mục tiêu; phương án tốt nhất không đạt là {lr}"
+    if goal_cost > 0:
+        return f"{head}: đạt mục tiêu tốn thêm khoảng {format_vnd(round(goal_cost))}"
+    return f"{head}: đạt mục tiêu không tốn thêm tiền"
 
 
 def blocked_recommendation(inp: SimInputs) -> Recommendation:

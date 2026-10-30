@@ -95,3 +95,34 @@ def test_efficiency_marginal_return() -> None:
     assert sel.ranked[0] == 1 and not sel.eligible[2]
     tight = select_actions("efficiency", outs, min_marginal_return=5.0)
     assert tight.ranked[0] == 0  # defaults to pause
+
+
+def test_identical_actions_never_runner_up() -> None:
+    """M3-whatif §5.1: pause ≡ pause_until_restock (no restock in the horizon) gave p = 0."""
+    pause = _o("pause", 3e6, 95, 0)
+    twin = Outcome("pause_until_restock", True, pause.j.copy(), pause.sold.copy(), pause.spend)
+    outs = [_o("continue", 1e6, 106, 5e6), pause, twin, _o("reduce", 2e6, 100, 2e6)]
+    sel = select_actions("profit", outs)
+    assert sel.ranked[:2] == [1, 3] and 2 not in sel.ranked
+    assert sel.duplicate_of == {2: 1}
+    # the twin listed first ranks first; the original becomes the duplicate
+    sel2 = select_actions("profit", [twin, pause, outs[0]])
+    assert sel2.ranked == [0, 2] and sel2.duplicate_of == {1: 0}
+
+
+def test_sell_target_runner_up_from_goal_meeting_actions() -> None:
+    """M3-whatif §5.2: the runner-up meets the goal when ≥ 2 actions do; with one only, it is
+    the best action missing the goal and ``runner_up_meets_goal`` is False."""
+    outs = [
+        _o("continue", -1.5e6, 106, 5e6),
+        _o("schedule", 2.5e6, 90, 1e6),
+        _o("reduce30", 1e5, 104, 3.6e6),
+        _o("reduce50", 1.2e6, 98, 2.5e6),
+    ]
+    two = select_actions("sell_target", outs, target_units=100, sell_target_prob=0.8)
+    assert two.ranked[:2] == [2, 0] and two.runner_up_meets_goal
+    one = select_actions("sell_target", outs, target_units=105, sell_target_prob=0.6)
+    assert one.ranked[0] == 0 and not one.runner_up_meets_goal
+    assert one.ranked[1] == 1  # best (by E[J]) among the actions missing the goal
+    prof = select_actions("profit", outs)
+    assert prof.runner_up_meets_goal

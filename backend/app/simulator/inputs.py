@@ -73,13 +73,14 @@ class SkuInput:
     label: Label
     m: FloatArr  # [T] contribution per unit
     price: FloatArr  # [T] effective price
-    leftover_value: float  # V (0 for combos)
+    leftover_value: float  # V, net of cost like m (0 for combos)
     stock0: float  # stock at start (UNLIMITED when unknown; unused for combos)
     safety: float
     reserve: float  # own flash reserve (units of this SKU / combo)
     restock_plans: list[tuple[date, int]]  # (planned VN date, qty)
     restock_delay: float  # scenario delay in days (per SKU)
     revenue_share: float = 0.0  # share of expected campaign revenue (λ_sq · price)
+    unit_cost: float = 0.0  # lower bound of V (V = −cost: the leftover is worthless)
 
 
 @dataclass
@@ -557,8 +558,8 @@ def load_inputs(
             for t, d in enumerate(local_days):
                 e = econ.get(sku, d)
                 m[t], price[t] = e.m, e.eff_price
-        v_default = 0.5 * econ.unit_cost.get(sku, 0)
-        v = 0.0 if is_b else params.num("leftover_value_per_unit", sku, default=v_default)
+        # V is net of cost like m (05 §3/§4): default 0 = sold later at break-even
+        v = 0.0 if is_b else params.num("leftover_value_per_unit", sku, default=0.0)
         st = stock_at.get(sku)
         if st is None and not is_b:
             st = UNLIMITED
@@ -578,6 +579,7 @@ def load_inputs(
                 m=m,
                 price=price,
                 leftover_value=float(v),
+                unit_cost=float(econ.unit_cost.get(sku, 0) or 0),
                 stock0=float(st) if st is not None else 0.0,
                 safety=0.0 if is_b else params.num("safety_stock", sku),
                 reserve=reserve.get(sku, 0.0),

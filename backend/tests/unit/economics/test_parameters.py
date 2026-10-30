@@ -55,6 +55,19 @@ def test_out_of_range_vietnamese() -> None:
         validate_value("no_such_key", 1)
 
 
+def test_leftover_value_is_net_of_cost_default_zero() -> None:
+    """M3-whatif §3: V is net of cost like m, default 0 (not 0,5 × cost); may be negative
+    down to −cost (recovered below cost), never below."""
+    d = CATALOGUE["leftover_value_per_unit"]
+    assert d.default == 0.0 and d.default_rule and "giá vốn" in d.label_vi
+    assert validate_value("leftover_value_per_unit", -100_000, lower=-455_000) == -100_000
+    with pytest.raises(ParamOutOfRange) as e:
+        validate_value("leftover_value_per_unit", -500_000, lower=-455_000, upper=690_000)
+    assert e.value.details["min"] == -455_000 and e.value.details["max"] == 690_000
+    with pytest.raises(ParamOutOfRange):
+        validate_value("leftover_value_per_unit", float("-inf"))
+
+
 def test_versions_and_history(conn: duckdb.DuckDBPyConnection) -> None:
     a = set_parameter(conn, "platform_fee_rate", 0.1, set_by="lead", reason="hợp đồng mới")
     b = set_parameter(conn, "platform_fee_rate", 0.11, set_by="lead")
@@ -83,7 +96,7 @@ def test_ai_suggestion_not_effective_until_confirmed(conn: duckdb.DuckDBPyConnec
         reason="thanh lý 20k",
     )
     ps = load_param_set(conn)
-    assert ps.num("leftover_value_per_unit", "NOICHIEN2L", default=227_500) == 227_500
+    assert ps.num("leftover_value_per_unit", "NOICHIEN2L") == 0.0  # catalogue default
     confirm_suggestion(
         conn, "leftover_value_per_unit", scope="sku", scope_id="NOICHIEN2L", version=s.version
     )
@@ -104,7 +117,7 @@ def test_resolution_order(conn: duckdb.DuckDBPyConnection) -> None:
     assert ps.num("leftover_value_per_unit", "A") == 5_000  # session wins
     ps = load_param_set(conn)
     assert ps.num("leftover_value_per_unit", "A") == 10_000
-    assert ps.num("leftover_value_per_unit", "B", default=7) == 7  # rule default
+    assert ps.num("leftover_value_per_unit", "B") == 0.0  # catalogue default (net of cost)
     assert ps.resolve("platform_fee_rate").version == 0  # catalogue default
     ps = load_param_set(conn, overrides={"leftover_value_per_unit@A": 1_000})
     r = ps.resolve("leftover_value_per_unit", "A")

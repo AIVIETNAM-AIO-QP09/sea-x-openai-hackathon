@@ -292,6 +292,11 @@ def rec_from_row(r: dict[str, Any], inputs_ref: Any) -> Recommendation:
         scenario_id=r["scenario_id"],
         created_at=r["created_at"],
         superseded_by=r["superseded_by"],
+        # not stored: a recommended action with a runner-up but no p is the "only action
+        # meeting the goal" case (recommend.build_recommendation)
+        runner_up_meets_goal=not (
+            r["status"] == "recommend" and r["runner_up"] and r["p_best"] is None
+        ),
     )
 
 
@@ -370,29 +375,36 @@ def _resolve_goal(conn: duckdb.DuckDBPyConnection, body: ScenarioRunRequest) -> 
 
 
 def _check_leftover(conn: duckdb.DuckDBPyConnection, body: ScenarioRunRequest) -> None:
-    """``leftover_value_per_unit`` has no fixed max (05 §3: ≤ selling price). The simulator
-    bounds only ``key@SKU`` overrides, so the API bounds the plain key by the highest
-    selling price of the campaign's SKUs."""
+    """``leftover_value_per_unit`` (net of cost, 05 §3) has no fixed range: −cost ≤ V ≤
+    selling price. The simulator does not know the bounds, so the API checks the plain key
+    against the highest price / cost of the campaign's SKUs (``key@SKU``: that SKU)."""
     for raw, v in body.param_overrides.items():
         key, _, sku = raw.partition("@")
         if key != "leftover_value_per_unit" or not isinstance(v, int | float):
             continue
+        where = (
+            " WHERE s.sku_id = ?"
+            if sku
+            else " JOIN campaign_skus cs USING (sku_id) WHERE cs.campaign_id = ?"
+            " AND NOT s.is_bundle"
+        )
         row = conn.execute(
-            "SELECT max(coalesce(s.list_price, 0)) FROM skus s"
-            + (
-                " WHERE s.sku_id = ?"
-                if sku
-                else " JOIN campaign_skus cs USING (sku_id) WHERE cs.campaign_id = ?"
-                " AND NOT s.is_bundle"
-            ),
+            "SELECT max(coalesce(s.list_price, 0)),"
+            " max((SELECT max(c.unit_cost) FROM cost_items c WHERE c.sku_id = s.sku_id))"
+            " FROM skus s" + where,
             [sku or body.campaign_id],
         ).fetchone()
         price = float(row[0]) if row and row[0] else None
-        if price is not None and float(v) > price:
+        cost = float(row[1]) if row and row[1] is not None else None
+        lo = -cost if cost is not None else None
+        if (price is not None and float(v) > price) or (lo is not None and float(v) < lo):
             raise ParamOutOfRange(
-                f"Giá trị hàng dư {v:,.0f}đ lớn hơn giá bán {price:,.0f}đ.".replace(",", "."),
+                (
+                    f"Giá trị ròng hàng dư {v:,.0f}đ nằm ngoài khoảng cho phép"
+                    f" ({lo or 0:,.0f}đ – {price or 0:,.0f}đ: từ −giá vốn tới giá bán)."
+                ).replace(",", "."),
                 key=raw,
-                min=0,
+                min=lo,
                 max=price,
                 got=v,
             )

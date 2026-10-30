@@ -54,7 +54,8 @@ class BreakevenRequest(BaseModel):
     spend_per_hour_vnd: float
     rate_continue_per_hour: float = Field(ge=0)
     pause_rate_interval: tuple[float, float, float]
-    leftover_value_per_unit_vnd: float = Field(default=0.0, ge=0)
+    # net of cost (05 §3): may be < 0 when leftovers are recovered below cost
+    leftover_value_per_unit_vnd: float = 0.0
     alt_leftover_values: list[float] = Field(default_factory=lambda: [20_000.0])
 
     def case(self) -> UniformCase:
@@ -79,6 +80,13 @@ class ZoneBar(BaseModel):
     # [DEV] uniform-case inputs that reproduce ``threshold`` exactly (M3-web §2); None when
     # the simulated bar has no exact uniform equivalent (pause still spends, ...)
     inputs: BreakevenRequest | None = None
+    # [DEV] ``verdict`` compares continue and pause on money only. When pause is not
+    # allowed (flash-sale commitment, ...) ``pause_feasible`` is False and ``verdict_note``
+    # is the sentence to show INSTEAD of "pause tốt hơn": the bar then measures the cost of
+    # the constraint, it is not a recommendation to pause (decision log M3-mo-phong Q14).
+    pause_feasible: bool = True
+    pause_violations: list[str] = []
+    verdict_note: str | None = None
 
 
 @dataclass(frozen=True)

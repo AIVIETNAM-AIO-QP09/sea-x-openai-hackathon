@@ -66,6 +66,8 @@ def test_parameters_list(api: TestClient) -> None:
     )["data"]  # fmt: skip
     v = next(i for i in sku if i["key"] == "leftover_value_per_unit")
     assert v["max"] == 690_000 and v["default_rule"] and v["can_edit"] is True
+    # V net of cost (M3-whatif §3): default 0, may go down to −cost
+    assert v["default"] == 0 and v["value"] == 0 and v["min"] == -455_000 and v["min_rule"]
     err(api.get(f"{V1}/parameters", params={"scope": "sku"}, headers=VIEWER), 400,
         "VALIDATION_ERROR")  # fmt: skip
 
@@ -81,6 +83,10 @@ def test_put_parameter_roles_and_ranges(api: TestClient) -> None:
     assert d2["version"] == 2
     e = err(api.put(url, json={**body, "value": 900_000}, headers=OPS), 400, "PARAM_OUT_OF_RANGE")
     assert e["error"]["details"]["max"] == 690_000
+    d3 = ok(api.put(url, json={**body, "value": -100_000}, headers=OPS))["data"]
+    assert d3["value"] == -100_000  # recovered below cost
+    e3 = err(api.put(url, json={**body, "value": -500_000}, headers=OPS), 400, "PARAM_OUT_OF_RANGE")
+    assert e3["error"]["details"]["min"] == -455_000
     # lead-only key
     fee = {"scope": "shop", "scope_id": "*", "value": 0.1}
     err(api.put(f"{V1}/parameters/platform_fee_rate", json=fee, headers=OPS), 403, "FORBIDDEN")

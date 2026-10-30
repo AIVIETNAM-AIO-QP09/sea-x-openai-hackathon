@@ -86,7 +86,7 @@ def test_overrides(api: TestClient, goal_cd002: str) -> None:
     err(
         api.post(
             f"{V1}/scenarios/run",
-            json={**base, "param_overrides": {"leftover_value_per_unit": -5}},
+            json={**base, "param_overrides": {"leftover_value_per_unit": -9_000_000}},  # < −cost
             headers=OPS,
         ),
         400,

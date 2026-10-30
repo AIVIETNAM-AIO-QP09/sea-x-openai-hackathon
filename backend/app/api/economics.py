@@ -65,9 +65,10 @@ class ParamItem(BaseModel):
     default: float | list[float] | None
     default_rule: str | None
     is_default: bool
-    min: float
+    min: float | None  # None = unbounded or bounded by the SKU cost (see ``min_rule``)
     max: float | None  # None = unbounded or bounded by the SKU price (see ``max_rule``)
     max_rule: str | None
+    min_rule: str | None = None
     scope: str  # where ``value`` comes from: default|shop|sku|campaign|session
     scope_id: str
     allowed_scopes: list[str]
@@ -169,16 +170,18 @@ def resolve_items(
         default: float | list[float] | None = (
             list(d.default_list) if d.kind == "list" else d.default
         )
-        if key == "leftover_value_per_unit" and sku and value is None:
-            cost = _unit_cost(conn, sku)
-            value = None if cost is None else 0.5 * cost
-            default = value
         sp = stored.get((key, r.scope, r.scope_id)) if r.version > 0 else None
         mx = _num(d.max)
+        mn = _num(d.min)
         max_rule = None
-        if d.max is None and key == "leftover_value_per_unit":
+        min_rule = None
+        if key == "leftover_value_per_unit":
+            # net of cost (05 §3): −cost (worthless) ≤ V ≤ selling price
             max_rule = "giá bán của SKU"
+            min_rule = "−giá vốn của SKU (hàng dư mất trắng)"
             mx = price
+            cost = _unit_cost(conn, sku) if sku else None
+            mn = -cost if cost is not None else None
         out.append(
             ParamItem(
                 key=key,
@@ -189,9 +192,10 @@ def resolve_items(
                 default=default,
                 default_rule=d.default_rule,
                 is_default=r.version == 0,
-                min=d.min,
+                min=mn,
                 max=mx,
                 max_rule=max_rule,
+                min_rule=min_rule,
                 scope=r.scope,
                 scope_id=r.scope_id,
                 allowed_scopes=sorted(d.scopes),
@@ -261,9 +265,11 @@ def put_parameter(
         raise ValidationFailed("Cần scope_id khi scope khác shop.", scope=body.scope)
     if body.scope == "shop" and body.scope_id != "*":
         raise ValidationFailed("Phạm vi shop dùng scope_id = '*'.", scope_id=body.scope_id)
-    upper = None
+    upper = lower = None
     if key == "leftover_value_per_unit" and body.scope == "sku":
         upper = sku_price(conn, body.scope_id)
+        cost = _unit_cost(conn, body.scope_id)
+        lower = -cost if cost is not None else None
     if not can_edit(key, user.role):
         raise Forbidden(
             f"Vai trò '{user.role}' không được sửa '{d.label_vi}' (cần {_min_role(d)}).",
@@ -281,6 +287,7 @@ def put_parameter(
         set_by=user.role,
         reason=body.reason,
         upper=upper,
+        lower=lower,
     )
     audit(
         conn,

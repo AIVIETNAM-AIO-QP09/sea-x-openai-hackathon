@@ -21,6 +21,7 @@ import numpy as np
 from app.ads_effect.schemas import IroasEstimate
 from app.core.events import RecommendationChanged
 from app.core.ids import new_id
+from app.core.timeutil import to_utc
 from app.economics.goals import get_goal
 from app.economics.parameters import load_param_set
 from app.forecast.base import ForecastResult
@@ -58,11 +59,11 @@ def _key(inp: SimInputs, req: SimRequest, actions: Sequence[ActionSpec]) -> str:
             tuple(sorted(inp.params.versions.items())),
             inp.goal.goal_id,
             inp.goal.version,
-            inp.data_as_of.isoformat() if inp.data_as_of else None,
-            inp.start.isoformat(),
+            to_utc(inp.data_as_of).isoformat() if inp.data_as_of else None,
+            to_utc(inp.start).isoformat(),
             inp.T,
             tuple(a.key for a in actions),
-            tuple(sorted((k, repr(v)) for k, v in req.param_overrides.items())),
+            tuple(sorted((k, repr(v)) for k, v in inp.params.overrides.items())),
             req.samples,
             req.seed,
         ]
@@ -107,7 +108,9 @@ def run_simulation(
             scenario_id=new_id("scn"),
             results=[],
             recommendation=rec,
-            input_hash=engine.cache_key([inp.campaign_id, "blocked", inp.start.isoformat()]),
+            input_hash=engine.cache_key(
+                [inp.campaign_id, "blocked", to_utc(inp.start).isoformat()]
+            ),
             blocked=True,
         )
         rec.scenario_id = out.scenario_id

@@ -68,9 +68,15 @@ CATALOGUE: dict[str, ParamDef] = {
     for d in (
         _p(key="platform_fee_rate", label_vi="Phí sàn", unit="tỷ lệ", default=0.12, min=0.0,
            max=0.3, scopes={"shop"}, editable_by={"lead"}, source_hint="seller"),
-        _p(key="leftover_value_per_unit", label_vi="Giá trị 1 sp còn lại sau hạn (V)",
-           unit="đ/sp", default=None, default_rule="0.5 × giá vốn", min=0.0, max=None,
-           scopes={"sku", "session"}, editable_by={"operator"}, source_hint="seller"),
+        # V = NET value of one leftover unit vs its cost (05 §3/§4): what it brings back after
+        # the deadline minus its cost and the cost of selling it later. Same base as m, which
+        # already subtracts the cost. 0 = sold later at break-even (regularly restocked
+        # items); < 0 = recovered below cost (seasonal / dead stock, ≥ −cost); ≤ selling price.
+        _p(key="leftover_value_per_unit",
+           label_vi="Giá trị ròng 1 sp còn lại sau hạn, so với giá vốn (V)", unit="đ/sp",
+           default=0.0, min=-INF, max=None, scopes={"sku", "session"},
+           editable_by={"operator"}, source_hint="seller",
+           default_rule="0đ = bán sau vẫn hòa vốn; âm nếu thu hồi dưới giá vốn (≥ −giá vốn)"),
         _p(key="horizon_end", label_vi="Hạn quyết định", unit="thời điểm", default=None,
            default_rule="hết ngày hiện tại", min=0.0, max=None, scopes={"session"},
            editable_by={"operator"}, source_hint="goal", kind="timestamp"),
@@ -130,9 +136,12 @@ def _fmt(x: float) -> str:
     return f"{x:,.10g}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def validate_value(key: str, value: object, *, upper: float | None = None) -> ParamValue:
-    """Check type and range. ``upper`` bounds parameters whose max depends on the SKU
-    (``leftover_value_per_unit`` ≤ selling price). Returns the normalised value."""
+def validate_value(
+    key: str, value: object, *, upper: float | None = None, lower: float | None = None
+) -> ParamValue:
+    """Check type and range. ``upper`` / ``lower`` bound parameters whose range depends on
+    the SKU (``leftover_value_per_unit``: −cost ≤ V ≤ selling price). Returns the normalised
+    value."""
     d = get_def(key)
     if d.kind == "timestamp":
         if isinstance(value, datetime):
@@ -149,26 +158,34 @@ def validate_value(key: str, value: object, *, upper: float | None = None) -> Pa
             raise ParamOutOfRange(f"'{d.label_vi}' phải là danh sách số.", key=key)
         out = [_check_num(d, v, None) for v in value]
         return sorted(set(out))
-    return _check_num(d, value, upper)
+    return _check_num(d, value, upper, lower)
 
 
-def _check_num(d: ParamDef, value: object, upper: float | None) -> float:
+def _check_num(
+    d: ParamDef, value: object, upper: float | None, lower: float | None = None
+) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ParamOutOfRange(f"'{d.label_vi}' phải là số.", key=d.key)
     v = float(value)
     hi = d.max if d.max is not None else upper
-    if not math.isfinite(v) or v < d.min or (hi is not None and v > hi):
-        rng = (
-            f"{_fmt(d.min)}–{_fmt(hi)}"
-            if hi is not None and math.isfinite(hi)
-            else (f"từ {_fmt(d.min)} trở lên")
-        )
+    lo = d.min if lower is None else max(d.min, lower)
+    if not math.isfinite(v) or v < lo or (hi is not None and v > hi):
+        lo_f = lo if math.isfinite(lo) else None
+        hi_f = hi if hi is not None and math.isfinite(hi) else None
+        if lo_f is not None and hi_f is not None:
+            rng = f"{_fmt(lo_f)}–{_fmt(hi_f)}"
+        elif lo_f is not None:
+            rng = f"từ {_fmt(lo_f)} trở lên"
+        elif hi_f is not None:
+            rng = f"tối đa {_fmt(hi_f)}"
+        else:
+            rng = "số hữu hạn"
         raise ParamOutOfRange(
             f"'{d.label_vi}' = {_fmt(v)} {d.unit} nằm ngoài khoảng cho phép ({rng}).",
             key=d.key,
             value=v,
-            min=d.min,
-            max=hi,
+            min=lo_f,
+            max=hi_f,
         )
     return v
 
@@ -235,6 +252,7 @@ def set_parameter(
     set_by: str = "operator",
     reason: str | None = None,
     upper: float | None = None,
+    lower: float | None = None,
     at: datetime | None = None,
 ) -> StoredParam:
     """Write a new version. Raises ``ParamOutOfRange`` / ``ValidationFailed`` /
@@ -250,7 +268,7 @@ def set_parameter(
         raise ValidationFailed(f"set_by không hợp lệ: {set_by}")
     if not can_edit(key, set_by):
         raise Forbidden(f"Vai trò '{set_by}' không được sửa '{d.label_vi}'.", key=key, role=set_by)
-    v = validate_value(key, value, upper=upper)
+    v = validate_value(key, value, upper=upper, lower=lower)
     row = conn.execute(
         "SELECT coalesce(max(version), 0) FROM parameters WHERE key = ? AND scope = ?"
         " AND scope_id = ?",

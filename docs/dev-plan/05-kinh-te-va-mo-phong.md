@@ -92,7 +92,7 @@ class ParamDef(BaseModel):
 | key | Nhãn | Đơn vị | Mặc định | Khoảng | Phạm vi | Ai sửa | Nguồn |
 |---|---|---|---|---|---|---|---|
 | `platform_fee_rate` | Phí sàn | tỷ lệ | 0,12 | 0–0,3 | shop | lead | seller |
-| `leftover_value_per_unit` | Giá trị 1 sp còn lại sau hạn (V) | đ/sp | 0,5 × giá vốn | 0 – giá bán | sku, session | operator | seller |
+| `leftover_value_per_unit` | Giá trị ròng 1 sp còn lại sau hạn, so với giá vốn (V) | đ/sp | 0 | −giá vốn – giá bán | sku, session | operator | seller |
 | `horizon_end` | Hạn quyết định | thời điểm | hết ngày hiện tại | ≤ 72 giờ | session | operator | goal |
 | `safety_stock` | Tồn an toàn không bán | sp | 0 | 0–∞ | sku | operator | seller |
 | `stockout_penalty_per_unit` | Phạt mỗi sp thiếu hàng (hủy đơn, uy tín) | đ/sp | 0 | 0–∞ | shop | lead | kịch bản |
@@ -112,6 +112,12 @@ Quy tắc:
 - AI chỉ được **đề xuất** giá trị (`ai_suggested`). Người dùng xác nhận mới thành `ai_suggested_confirmed`.
 - Tham số "kịch bản" (`rank_loss_after_pause`, `stockout_penalty_per_unit`, `restock_delay_days`) khác 0 thì nhãn kết quả không vượt quá `reference`. Lý do hiện trên UI: "đang dùng giả định".
 - Giá trị ngoài `[min, max]` → `422` với thông báo tiếng Việt.
+
+**Giá trị hàng dư V (sửa sau M3-whatif).** `V` là giá trị **ròng** của 1 sp còn lại sau hạn **so với giá vốn**: tiền thu hồi khi bán sau hạn, trừ giá vốn và chi phí bán tiếp (giữ hàng, vốn, phí). Cùng gốc với `m` (đã trừ giá vốn) trong `J` ở §4.
+- `V = 0` (mặc định): sp dư bán sau vẫn hòa vốn. Đúng cho hàng nhập đều: sp dư hôm nay chỉ thay cho một sp phải nhập tuần sau.
+- `V < 0`: thu hồi dưới giá vốn (hàng mùa vụ, hàng ế). `V = −giá vốn` là hàng dư mất trắng. Đây là chặn dưới.
+- `V > 0`: sp dư còn mang về lãi sau hạn. Không bao giờ vượt `m` ngày thường. Chặn trên vẫn là giá bán.
+- Mặc định cũ `0,5 × giá vốn` sai kinh tế: nồi chiên V = 227.500đ, lớn hơn cả lãi ngày thường 149.200đ. Hậu quả: 27/31 chiến dịch ngày thường ra pause chỉ vì "giữ hàng lợi hơn bán".
 
 ## 4. Mục tiêu → hàm mục tiêu + ràng buộc
 
@@ -135,7 +141,7 @@ Với mỗi mẫu `s` và hành động `a`, trên horizon tới `deadline`:
 ```
 J_s(a) = Σ_t Σ_i m_i(t)·sold_{s,i,t}(a)           # đóng góp
        − Σ_t spend_{s,t}(a)                          # chi ads
-       + Σ_i V_i · stock_end_{s,i}(a)                # giá trị hàng dư
+       + Σ_i V_i · stock_end_{s,i}(a)                # giá trị hàng dư, RÒNG so với giá vốn (§3)
        − penalty · Σ_t Σ_i lost_{s,i,t}(a)           # nhu cầu không phục vụ được (mặc định 0)
 ```
 
@@ -309,6 +315,8 @@ class ZoneBar(BaseModel):
 
 `verdict`: p10 > x* → `pause_better`; p90 < x* → `continue_better`; còn lại `undetermined`.
 
+Pause bị cấm (vd cam kết flash sale): thanh vẫn trả về, `verdict` vẫn là so sánh tiền, thêm `pause_feasible = false`, `pause_violations` và `verdict_note`. UI hiện `verdict_note` thay cho câu "pause tốt hơn": thanh lúc này cho thấy cái giá của ràng buộc, không phải đề xuất (nhật ký M3-mo-phong Q14).
+
 Thanh vùng so `continue` với `pause` (câu hỏi trung tâm của sản phẩm). Hành động tốt nhất trong cả 5 hiện ở dòng đề xuất ngay dưới thanh. Hành động tốt nhất là `schedule_hours` hay `reduce_budget` thì UI ghi "Phương án tốt hơn cả hai: …".
 
 ## 8. Điều làm đổi kết luận (độ nhạy)
@@ -317,7 +325,7 @@ Với đề xuất `best` và `runner_up`, tìm giá trị của từng yếu t�
 
 | Yếu tố | Khoảng tìm | Câu hiển thị (mẫu) |
 |---|---|---|
-| `leftover_value_per_unit` (V) | [0, giá bán] | "Nếu hàng dư còn giá trị từ {V*}đ/sp trở lên → {runner_up} tốt hơn" |
+| `leftover_value_per_unit` (V) | [−giá vốn, giá bán] | "Nếu hàng dư còn giá trị từ {V*}đ/sp trở lên → {runner_up} tốt hơn" |
 | Mức nhu cầu (nhân `Lmult` cố định) | [p10, p90] của forecast | "Nếu nhu cầu thấp hơn dự báo {x}% → …" |
 | Hiệu quả ads (a) | [p10, p90] của posterior | "Nếu ads hiệu quả kém hơn ước lượng {x}% → …" |
 | `restock_delay_days` | [0, 7] | "Nếu hàng về trễ từ {d} ngày → …" |
@@ -331,10 +339,15 @@ Unit test theo ví dụ trang 10: dự báo pause p10 = 18 sp/giờ → điểm 
 ```
 1. Loại hành động feasible = false.
 2. Xếp theo hàm mục tiêu của goal (§4). Nếu không còn hành động nào đạt ràng buộc goal → none_meets_goal.
-3. best, runner_up = hai hành động đứng đầu.
+3. best, runner_up = hai hành động đứng đầu, bỏ hành động có kết quả TRÙNG HỆT một hành động
+   xếp trên (vd pause ≡ pause_until_restock khi không có hàng về trong horizon).
+   Mục tiêu có ràng buộc (sell_target, clear_stock): runner_up lấy trong các hành động đạt mục tiêu.
+   Chỉ một hành động đạt → recommend; runner_up = hành động tốt nhất KHÔNG đạt (để tham chiếu),
+   p = gain = null, goal_cost_vnd = E[J(runner_up)] − E[J(best)], lý do ghi rõ "Chỉ X đạt mục tiêu…".
    p = mean_s[ J_s(best) > J_s(runner_up) ];  gain = E[J(best)] − E[J(runner_up)]
-4. Nếu p ≥ decision_min_prob và gain ≥ max(decision_min_gain_vnd, 5% · |E[J(best)]|) → recommend
-   ngược lại → undetermined (vẫn hiện best/runner_up, thanh vùng, điều làm đổi)
+4. Nếu p ≥ decision_min_prob và gain ≥ max(decision_min_gain_vnd, 5% · |E[J(best)] − E[V·tồn cuối(best)]|)
+   → recommend, ngược lại → undetermined (vẫn hiện best/runner_up, thanh vùng, điều làm đổi).
+   Mẫu số 5% bỏ phần giá trị hàng dư: phần đó tỷ lệ với lượng tồn, không với cái đang được quyết.
 5. confidence = min theo thứ tự scenario < reference < verified của:
    nhãn forecast các SKU chiếm ≥ 80% doanh thu chiến dịch, nhãn iROAS, nhãn dữ liệu
    (dữ liệu cũ, thiếu giá vốn, ads unknown → scenario), có tham số kịch bản ≠ 0 → tối đa reference

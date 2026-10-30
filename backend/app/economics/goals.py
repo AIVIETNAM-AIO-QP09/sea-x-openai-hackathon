@@ -173,9 +173,27 @@ class Selection:
     p_target: list[float | None]  # sell_target: P(Σ sold ≥ N)
     notes: dict[int, str] = field(default_factory=dict)
     none_meets_goal: bool = False
+    # ``ranked[1]`` (runner-up) meets the goal constraint too. False only for goals with a
+    # constraint (sell_target, clear_stock) when the best is the only action meeting it:
+    # the runner-up is then the best action that MISSES the goal, a reference not a rival.
+    runner_up_meets_goal: bool = True
+    # action index → index of an earlier-ranked action with identical results on every
+    # sample (e.g. pause ≡ pause_until_restock when no restock lands in the horizon);
+    # duplicates are left out of ``ranked`` so they never become a fake runner-up.
+    duplicate_of: dict[int, int] = field(default_factory=dict)
 
     def score(self, o: Outcome) -> FloatArr:
         return o.sold if self.metric == "units_sold" else o.j
+
+
+def same_outcome(a: Outcome, b: Outcome) -> bool:
+    """Identical per-sample results (J, units, spend): choosing one or the other is the
+    same decision."""
+    return (
+        np.array_equal(a.j, b.j)
+        and np.array_equal(a.sold, b.sold)
+        and np.array_equal(a.spend, b.spend)
+    )
 
 
 def select_actions(
@@ -231,18 +249,35 @@ def select_actions(
                     )
                     break
 
-    ranked = sorted((i for i in range(n) if eligible[i]), key=lambda i: (-value[i], sp[i]))
+    duplicate_of: dict[int, int] = {}
+
+    def dedupe(idx: list[int], kept: list[int]) -> list[int]:
+        out: list[int] = []
+        for i in idx:
+            twin = next((k for k in (*kept, *out) if same_outcome(outcomes[i], outcomes[k])), None)
+            if twin is None:
+                out.append(i)
+            else:
+                duplicate_of[i] = twin
+        return out
+
+    order = sorted((i for i in range(n) if eligible[i]), key=lambda i: (-value[i], sp[i]))
+    ranked = dedupe(order, [])
     none = not ranked
     if none and fallback_cheapest:
         cheap = sorted((i for i in range(n) if feasible[i]), key=lambda i: (sp[i], -ej[i]))
         ranked, none = cheap[:1], False
-    if ranked and not none:
-        # runner-up candidates: the remaining eligible ones, then feasible ones by value
+    runner_meets = True
+    if ranked and not none and len(ranked) < 2:
+        # runner-up = the best feasible action outside the eligible set (it misses the goal)
         rest = sorted(
-            (i for i in range(n) if feasible[i] and i not in ranked),
+            (i for i in range(n) if feasible[i] and i not in ranked and i not in duplicate_of),
             key=lambda i: (-value[i], sp[i]),
         )
-        ranked = ranked + rest if len(ranked) < 2 else ranked
+        rest = dedupe(rest, ranked)
+        if rest and goal_kind in ("sell_target", "clear_stock"):
+            runner_meets = False
+        ranked = ranked + rest
     return Selection(
         kind=goal_kind,
         metric=metric,
@@ -252,4 +287,6 @@ def select_actions(
         p_target=p_target,
         notes=notes,
         none_meets_goal=none,
+        runner_up_meets_goal=runner_meets,
+        duplicate_of=duplicate_of,
     )

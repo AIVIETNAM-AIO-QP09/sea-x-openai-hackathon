@@ -176,6 +176,12 @@ class Recommendation(BaseModel):
     scenario_id: str | None = None
     created_at: datetime | None = None
     superseded_by: str | None = None
+    # [DEV] False when the best is the ONLY action meeting the goal (sell_target /
+    # clear_stock): ``runner_up`` is then the best action that misses the goal, shown for
+    # reference; ``p_best_beats_runner_up`` / ``expected_gain_vnd`` are None (not rivals) and
+    # ``goal_cost_vnd`` = E[J(runner_up)] − E[J(best)] is what meeting the goal costs.
+    runner_up_meets_goal: bool = True
+    goal_cost_vnd: int | None = None
 
 
 class SimOutput(BaseModel):
