@@ -12,6 +12,7 @@ import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -60,7 +61,7 @@ def build_presets(shop: Path) -> dict:
                 if delta.ingest and any(f.status == "failed" for f in delta.ingest.files):
                     raise RuntimeError(f"Live delta failed at {key}; no presets published.")
 
-                def get(path: str):
+                def get(path: str) -> Any:
                     response = api.get("/api/v1/" + path, headers=headers)
                     response.raise_for_status()
                     return response.json()
