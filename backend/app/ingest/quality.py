@@ -457,16 +457,24 @@ def check_stock_jump(
         rec = np.zeros(len(cur))
         days = rec_by.get(sku, {})
         hourly_days: dict[date, list[int]] = {}
-        for k in range(len(cur)):
-            t0, t1 = t[k], t[k + 1]
-            if gran[k + 1] == "hour":
-                hourly_days.setdefault(_local_day(t1 - pd.Timedelta(hours=1)), []).append(k)
-                continue
-            for day, q in days.items():
-                at = pd.Timestamp(
+        # numpy views: per-element pandas Timestamp work dominated live deltas.
+        t_ns = t.as_unit("ns").asi8
+        hour_day = (t - pd.Timedelta(hours=1)).tz_convert(VN_TZ).date
+        rec_at = [
+            (
+                pd.Timestamp(
                     datetime(day.year, day.month, day.day, RECEIPT_HOUR_LOCAL, tzinfo=VN_TZ)
-                ).tz_convert("UTC")
-                if t0 <= at < t1:
+                ).value,
+                q,
+            )
+            for day, q in days.items()
+        ]
+        for k in range(len(cur)):
+            if gran[k + 1] == "hour":
+                hourly_days.setdefault(hour_day[k + 1], []).append(k)
+                continue
+            for at_ns, q in rec_at:
+                if t_ns[k] <= at_ns < t_ns[k + 1]:
                     rec[k] += q
         resid = cur - (prev - sold + rec)
         for day, ks in hourly_days.items():

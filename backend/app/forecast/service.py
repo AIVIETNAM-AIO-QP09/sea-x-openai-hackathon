@@ -45,7 +45,7 @@ from app.forecast.base import (
 )
 from app.forecast.context import FitContext, build_fit_context
 from app.forecast.data import PanelMatrix, panel_matrix
-from app.forecast.drift import DriftAlarm, scan
+from app.forecast.drift import DriftAlarm, merge_alarms, scan, scan_product
 from app.forecast.labels import decide_label
 from app.forecast.metrics import ScoreRow
 from app.forecast.models._common import BaseForecastModel, infer_context
@@ -389,12 +389,19 @@ def scan_drift(
     matrix: PanelMatrix,
     results: Iterable[ForecastResult],
     until: datetime,
+    *,
+    pooled: bool = True,
 ) -> list[DriftAlarm]:
     """CUSUM of the actual hours in ``[origin, until)`` against each forecast's mean, on
-    in-stock hours (03 §9). The orchestrator publishes ``alarm.event()`` on the bus."""
+    in-stock hours (03 §9). The orchestrator publishes ``alarm.event()`` on the bus.
+
+    [DEV] ``pooled`` (default): for a product with ≥ 2 variants sharing the forecast hours,
+    ``up`` comes from the product shock detector (``drift.scan_product``: NegBin LLR CUSUM
+    of "demand 2× forecast" summed over the variants in stock); ``down`` stays per SKU.
+    Single-variant products keep the per-SKU CUSUM both ways. M2 "Hoàn thiện M2"."""
     idx = matrix.index
-    alarms: list[DriftAlarm] = []
     stop = pd.Timestamp(until).tz_convert("UTC")
+    rows: list[tuple[str, str, pd.Timestamp, int, int, ForecastResult]] = []
     for res in results:
         i = idx.get(res.sku_id)
         if i is None:
@@ -407,15 +414,34 @@ def scan_drift(
         t1 = min(t0 + n, matrix.n_hours)
         if t1 <= t0:
             continue
-        y = matrix.y[i, t0:t1]
-        ins = matrix.present[i, t0:t1] & ~matrix.stockout[i, t0:t1]
-        lam = np.asarray(res.mean[: t1 - t0], dtype=np.float64)
-        alarms += scan(
-            res.sku_id,
-            [h.to_pydatetime() for h in hours[: t1 - t0]],
-            y,
+        pid = matrix.product_id.get(res.sku_id) or res.sku_id.split("-", 1)[0]
+        rows.append((res.sku_id, pid, hours[0], i, t1 - t0, res))
+    groups: dict[tuple[str, pd.Timestamp, int], list[int]] = {}
+    for j, (_, pid, h0, _, n, _) in enumerate(rows):
+        groups.setdefault((pid, h0, n), []).append(j)
+    multi = {j for g in groups.values() if pooled and len(g) >= 2 for j in g}
+    own: list[DriftAlarm] = []
+    for j, (sku, _, h0, i, n, res) in enumerate(rows):
+        t0 = matrix.hour_index(h0)
+        ins = matrix.present[i, t0 : t0 + n] & ~matrix.stockout[i, t0 : t0 + n]
+        hrs = [(h0 + pd.Timedelta(hours=q)).to_pydatetime() for q in range(n)]
+        lam = np.asarray(res.mean[:n], dtype=np.float64)
+        found = scan(sku, hrs, matrix.y[i, t0 : t0 + n], lam, res.dispersion_k, ins)
+        own += [a for a in found if not (j in multi and a.direction == "up")]
+    product: list[DriftAlarm] = []
+    for (_, h0, n), members in groups.items():
+        if not pooled or len(members) < 2:
+            continue
+        rws = [rows[j][3] for j in members]
+        t0 = matrix.hour_index(h0)
+        ins = matrix.present[rws, t0 : t0 + n] & ~matrix.stockout[rws, t0 : t0 + n]
+        lam = np.vstack([np.asarray(rows[j][5].mean[:n], dtype=np.float64) for j in members])
+        product += scan_product(
+            [rows[j][0] for j in members],
+            [(h0 + pd.Timedelta(hours=q)).to_pydatetime() for q in range(n)],
+            matrix.y[rws, t0 : t0 + n],
             lam,
-            res.dispersion_k,
+            [rows[j][5].dispersion_k for j in members],
             ins,
         )
-    return alarms
+    return merge_alarms(own, product)

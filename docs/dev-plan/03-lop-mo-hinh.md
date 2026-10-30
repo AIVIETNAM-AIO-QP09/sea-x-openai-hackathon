@@ -144,6 +144,17 @@ demand_adj(d) = Σ_{t ∈ d, còn hàng} y_t + Σ_{t ∈ d, hết hàng} L̂·P_
 
 Kiểm chứng (§10): trên các SKU có ≥ 5 giờ hết hàng trong cửa sổ backtest, độ lệch (bias) so với `nhu_cau_that` phải gần 0 hơn hẳn bản không hiệu chỉnh.
 
+**Hết hàng kéo dài** (M2, nhật ký `M2-du-bao.md` "Hoàn thiện M2"). Khi cửa sổ 14 ngày còn < 3 ngày "phần kỳ vọng" còn hàng, `L̂` không ước lượng trên vài giờ cuối (nhiễu, cũ) nữa mà lấy:
+
+```
+L(d) = L_pre · g_sib · g_trend
+L_pre   = mức trên 7 ngày phần kỳ vọng còn hàng gần nhất (lùi xa tùy cần) — mức trước khi hết
+g_sib   = (Σ_J L_J(ℓ) / Σ_J L_J(t̄)) ^ (0,85^(d − ℓ))   J = biến thể cùng sản phẩm, ℓ = ngày cuối còn quan sát
+g_trend = exp(slope · φ(1 − φⁿ)/(1 − φ)), φ = 0,85     chỉ nhóm trend, slope = OLS log L trước khi hết
+```
+
+Giờ hết hàng có `stockout_conf < 0,7` chỉ cộng nửa phần hiệu chỉnh. Nhu cầu thay đổi trong lúc **mọi** biến thể đều hết hàng thì không khôi phục được: trên `demo` (dd_1010) phần lệch còn lại −34,7% đến từ 9 SKU trend không có giờ còn hàng nào trong 14 ngày trước mốc và từ hiệu ứng chọn mẫu; phép thử "lịch sử hoàn hảo" cho −6,4%.
+
 ## 5. Bất định
 
 - `k` (dispersion NegBin): ước lượng theo nhóm bằng method of moments trên phần dư giờ còn hàng: `k = mean² / (var − mean)`, cắt trong [0,5, 50]. Mock dùng `k = 3`. Ước lượng ra 2–5 là hợp lý.
@@ -294,13 +305,22 @@ S⁻_t = max(0, S⁻_{t−1} − z_t − 0,5)
 Báo động khi S⁺ > 5 (cao hơn dự báo) hoặc S⁻ > 5 (thấp hơn). Sau báo động đặt lại về 0.
 ```
 
+**Sản phẩm nhiều biến thể** (M2 "Hoàn thiện M2"): biến thể chung cú sốc nhu cầu, nên chiều `up` chạy trên sản phẩm bằng CUSUM của log-likelihood ratio NegBin "nhu cầu = 2× dự báo", cộng trên các biến thể còn hàng:
+
+```
+LLR_v(t) = y·log(2λ(λ + k) / (λ(2λ + k))) + k·log((λ + k)/(2λ + k))
+S_t = max(0, S_{t−1} + Σ_v LLR_v(t)),   báo up (cho mọi biến thể còn hàng) khi S_t > 6
+```
+
+Ngưỡng 6 chọn để tổng số báo động trên ngày quá khứ không vượt bản z-CUSUM từng SKU. Chiều `down` và sản phẩm một biến thể giữ công thức trên.
+
 Báo động thì:
 - phát `DriftDetected(sku_id, direction, stat)` → cảnh báo có lý do ([06](06-dieu-phoi-va-hieu-nang.md));
 - nếu `direction=up`: kích hoạt `nowcast` cho SKU đó trong 24 giờ;
 - nếu `direction=down`: **không tự kết luận hết trend**. Cảnh báo kèm danh sách cần kiểm (giá/voucher đổi, hết biến thể, ads tắt, dữ liệu trễ) cho agent điều tra ([07](07-lop-ai.md)).
 
 Kỳ vọng trên demo:
-- `BINHNUOC500-*` báo `up` giữa 12:00 và 15:00 ngày 11.11.
+- `BINHNUOC500-*` báo `up` giữa 12:00 và 15:00 ngày 11.11. (Trên `demo` viral của bộ sinh bắt đầu 7–8h; app báo 10:00 cả ba biến thể, tức 2–3 giờ sau khi bắt đầu, xem `M2-du-bao.md` H4.)
 - `AOGIUNHIET-M` không báo `down` sai: giờ hết hàng bị loại khỏi CUSUM, nên app cảnh báo đúng "hết hàng", không phải "nhu cầu giảm".
 
 ## 10. Nghiệm thu (`backend/eval/eval_forecast.py`)

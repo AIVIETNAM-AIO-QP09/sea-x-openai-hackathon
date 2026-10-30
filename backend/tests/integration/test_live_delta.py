@@ -13,6 +13,7 @@ from app.ingest.pipeline import ingest_live_delta, read_live_status
 from app.warehouse import repo
 from eval.live_replay import write_live_stream
 from tests.mockdata import load_mock
+from tests.unit.panel.panel_compare import stored_vs_full
 
 pytestmark = pytest.mark.integration
 
@@ -80,4 +81,24 @@ def test_full_day_folder_without_status_file(tmp_path: Path) -> None:
     assert delta is not None and delta.status == "loaded"
     assert delta.tick is not None and delta.tick.orders_inventory_until is not None
     assert ingest_live_delta(conn, Path(delta.live_dir)).status == "empty"
+    conn.close()
+
+
+def test_hour_by_hour_panel_equals_full_rebuild(tmp_path: Path) -> None:
+    """PNL-04: after each live hour of 11.11 (window mode, touched SKUs only) the
+    stored panel and prices equal a whole-history rebuild, cell by cell."""
+    conn = duckdb.connect(str(tmp_path / "w.duckdb"))
+    load_mock(conn, "nho", build_panel=True)
+    out = tmp_path / "live_stream"
+    for hour in range(24):
+        write_live_stream("nho", out, hour)
+        assert ingest_live_delta(conn, out).status == "loaded"
+        cells, prices = stored_vs_full(conn)
+        assert cells == {} and prices == 0, (hour, cells, prices)
+    # Several hours in one delta (watcher was late) and a replay restart.
+    write_live_stream("nho", out, 3)
+    assert ingest_live_delta(conn, out).restarted
+    write_live_stream("nho", out, 9)
+    ingest_live_delta(conn, out)
+    assert stored_vs_full(conn) == ({}, 0)
     conn.close()

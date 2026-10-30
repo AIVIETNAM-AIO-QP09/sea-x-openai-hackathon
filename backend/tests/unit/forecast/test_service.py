@@ -74,7 +74,9 @@ def test_binhnuoc_drift_up_then_nowcast(nho_scored: Live, forecasts) -> None:  #
         ups = [a for a in alarms if a.sku_id == r.sku_id and a.direction == "up"]
         assert ups, r.sku_id
         local_hour = (pd.Timestamp(ups[0].hour) + pd.Timedelta(hours=7)).hour
-        assert 8 <= local_hour <= 15, (r.sku_id, local_hour)
+        # product shock detector (M2 "Hoàn thiện M2"): 10:00 for all three on ``nho``;
+        # the per-SKU CUSUM alone found XANH only at 15:00
+        assert 8 <= local_hour <= 11, (r.sku_id, local_hour)
         at = ups[0].hour + timedelta(hours=1)
         nf = service.forecast_sku(
             nho_scored.conn,
@@ -88,8 +90,14 @@ def test_binhnuoc_drift_up_then_nowcast(nho_scored: Live, forecasts) -> None:  #
         assert nf.model_id.startswith("nowcast")
         assert nf.confidence in ("reference", "scenario")
         assert any("lệch mạnh" in s for s in nf.reasons)
-        # nowcast level is far above the morning forecast
-        assert np.mean(nf.mean[:6]) > 1.5 * np.mean(r.mean[local_hour + 1 : local_hour + 7])
+        # nowcast is above the morning forecast at once, and far above it after two more
+        # hours of the shock (it is re-fitted every hour while drift is up)
+        assert np.mean(nf.mean[:6]) > 1.2 * np.mean(r.mean[local_hour + 1 : local_hour + 7])
+        at2 = at + timedelta(hours=1)
+        nf2 = service.forecast_sku(
+            nho_scored.conn, r.sku_id, at2, 24, drift_active={r.sku_id}, matrix=m, persist=False
+        )
+        assert np.mean(nf2.mean[:6]) > 1.5 * np.mean(r.mean[local_hour + 2 : local_hour + 8])
 
 
 def test_aogiunhiet_m_no_false_down(nho_scored: Live, forecasts) -> None:  # type: ignore[no-untyped-def]

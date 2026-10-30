@@ -554,6 +554,11 @@ Ghi chú cho ML: `ads_effect` ước lượng ở **cấp chiến dịch** ([04]
 
 `build_hourly_panel(sku_ids: list[str] | None, start: datetime, end: datetime)` chỉ tính lại khoảng bị ảnh hưởng: batch đơn hàng → giờ của các đơn đó tới `as_of`; batch tồn → từ ngày của snapshot sớm nhất; batch ads → giờ của dòng ads. Tính bằng SQL DuckDB (aggregate) + pandas cho phần dựng tồn tuần tự theo giờ.
 
+Đã làm (PNL-04, xem [M1-pipeline](../quyet-dinh/M1-pipeline.md) "Hoàn thiện M1"):
+
+- **Khoảng ghi** (pipeline, `_panel_start`): giờ sớm nhất của dòng mới, lùi về nửa đêm VN của ngày đó (giá là trung vị cả ngày), về snapshot hợp lệ gần nhất trước nó (sai lệch ở snapshot sau được rải cho cả đoạn) và về đầu lỗ ads ngay trước dòng ads mới (`ADS_LAG` thành `ADS_MISSING_HOUR`/`ADS_GAP_DAY`). Chỉ SKU bị chạm (đã đóng theo combo/thành phần và chiến dịch); SKU khác chỉ ghi phần giờ mới.
+- **Khoảng tính** (panel, chế độ cửa sổ, mặc định khi có `start`): từ nửa đêm VN trước `start − 168 giờ` và trước snapshot hợp lệ cuối cùng ≤ `start` của mỗi SKU có tồn (không nằm giữa ngày của một phiếu nhập). Trạng thái vắt qua đầu cửa sổ được mang vào: độ dài lỗ ads đã có trước cửa sổ và giá mang theo (`carried_forward`) của từng SKU. Dòng ghi ra giống hệt dựng toàn bộ (có test so từng ô).
+
 Mục tiêu hiệu năng: dựng toàn bộ panel demo < 20 giây; cập nhật một giờ live cho 300 SKU < 2 giây.
 
 ## 7. Live: nạp tăng dần

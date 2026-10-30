@@ -14,10 +14,12 @@ Trợ lý ra quyết định quảng cáo cho người vận hành shop trên Sh
 | Plan kỹ thuật đầy đủ (14 file) | Có | [docs/dev-plan/](docs/dev-plan/README.md) |
 | Bộ sinh dữ liệu giả lập có đáp án | Có, chạy được | [mock-data/](mock-data/README.md) |
 | Dữ liệu đã sinh sẵn (cỡ `nho` và `demo`, seed 20261111) | Có | `mock-data/out/` |
-| Backend: khung M0 (FastAPI, DuckDB đủ bảng, `/api/v1/health`, CLI) | Có | [backend/](backend/README.md) |
-| Frontend: khung M0 (React, router, 8 màn, chế độ fixture, 24 test) | Có | [web/](web/README.md) |
-| CI một cổng `ci` (backend, web, kiểm bộ sinh dữ liệu) | Có | [.github/workflows/ci.yml](.github/workflows/ci.yml) |
-| M1 · Lớp dữ liệu: adapter 7 loại file, bỏ PII, ghép SKU 3 nguồn, kiểm 12 lỗi cài sẵn, `hourly_panel`, pipeline `ingest` + nạp live theo giờ, chấm điểm `eval_data` | Xong phần chính (chấm trên `demo` bên dưới) | `backend/app/ingest`, `backend/app/panel`, `backend/eval/eval_data.py`, [nhật ký](docs/quyet-dinh/M1-pipeline.md) |
+| M0 · Khung: FastAPI, DuckDB đủ bảng, React 8 màn, CI một cổng `ci`, deploy Cloudflare, lệnh `node scripts/dev.mjs` | Xong | [backend/](backend/README.md), [web/](web/README.md), [ci.yml](.github/workflows/ci.yml) |
+| M1 · Dữ liệu: adapter 7 loại file, bỏ PII, ghép SKU 3 nguồn, kiểm 12 lỗi cài sẵn, `hourly_panel`, `ingest` + nạp live, `eval_data` | Xong (chấm trên `demo` bên dưới) | `backend/app/ingest`, `backend/app/panel`, [nhật ký](docs/quyet-dinh/M1-pipeline.md) |
+| M2 · Dự báo: 6 model, phân nhóm, backtest, nhãn tin cậy (PIT, WAPE so với sàn nhiễu), `backtest` / `fit` | Xong: tốt hơn baseline 46% trên 10.10; verified 44 / reference 242 / scenario 14 | `backend/app/forecast`, [nhật ký](docs/quyet-dinh/M2-du-bao.md) |
+| M3 · Quyết định: iROAS, kinh tế, mô phỏng 5 hành động, API, màn Tổng quan và So sánh nối dữ liệu thật | Xong: nồi chiên 11.11 → chỉ chạy khung flash sale, hơn chạy tiếp ~4 triệu | `backend/app/{ads_effect,economics,simulator,api}`, [nhật ký](docs/quyet-dinh/M3-mo-phong.md) |
+| M4 · AI và chạy trực tiếp | Đang làm: nền lớp AI xong (công cụ, kiểm số, chống injection), chưa nối giao diện | `backend/app/ai`, [nhật ký](docs/quyet-dinh/M4-ai.md) |
+| Màn Nhập dữ liệu, Cảnh báo, Nhật ký quyết định, Trợ lý AI, Cài đặt | Chưa có (trang chờ) | `web/src/pages` |
 
 Kết quả chấm lớp dữ liệu trên `demo` (`uv run python -m eval.eval_data --size demo`, dữ liệu mô phỏng, seed 20261111):
 
@@ -132,29 +134,40 @@ Dữ liệu "đang về" được ghi vào `mock-data/out/demo/live_stream/`, k�
 
 ### 4. Backend và frontend
 
-```powershell
-# Backend (terminal 1)
-uv python install 3.11                                  # một lần, nếu máy chưa có Python 3.11
-cd backend
-uv sync
-copy .env.example .env                                  # điền OPENAI_API_KEY khi tới M4
-uv run python -m app.cli migrate                        # tạo data/megaday.duckdb, đủ bảng
-uv run python tasks.py dev                              # API: http://localhost:8000/docs
+Cài một lần:
 
-# Frontend (terminal 2)
-cd web
-npm ci
-npm run dev                                             # http://localhost:5173 (proxy /api sang :8000)
+```powershell
+uv python install 3.11                                  # nếu máy chưa có Python 3.11
+cd backend; uv sync; copy .env.example .env; cd ..      # điền OPENAI_API_KEY khi dùng AI (M4)
+cd web; npm ci; cd ..
 ```
 
-Chưa muốn chạy backend thì bật chế độ fixture cho web: tạo `web/.env.local` với `VITE_USE_FIXTURES=true`.
+Chạy cả backend và web bằng **một lệnh** ở gốc repo (Windows, Mac, Linux đều dùng được):
+
+```powershell
+node scripts/dev.mjs                  # API http://localhost:8000/docs · Web http://localhost:5173
+node scripts/dev.mjs --fixtures       # chỉ web, dữ liệu mẫu, không cần backend
+node scripts/dev.mjs --db data/demo.duckdb --api-port 8001 --web-port 5174
+```
+
+Script tự migrate database trước khi bật API, gắn nhãn `[api]` / `[web]` cho log, và **Ctrl+C tắt cả hai**. Máy có `make` thì `make dev` / `make dev-fixtures` / `make check` gọi lại đúng các lệnh này.
+
+Nạp dữ liệu demo và chạy các bước tính (cần cho màn Tổng quan và So sánh có số thật):
+
+```powershell
+cd backend
+uv run python -m app.cli reset --yes
+uv run python -m app.cli ingest --dir ../mock-data/out/demo   # ~15–40 giây
+uv run python -m app.cli backtest                              # ~1–5 phút
+uv run python -m app.cli fit
+uv run python -m app.cli estimate-ads
+```
 
 Bản demo Cloudflare: <https://hackathon.dangphuc.me>. Deploy dùng `cf` CLI,
 Worker `hackathon` và D1 mới `hackathon-db`; hiện frontend dùng dữ liệu mẫu,
 backend Python/DuckDB chưa deploy. Mỗi push vào `main` tự deploy sau khi mọi
 kiểm tra CI thành công. Cấu hình và lệnh ở [web/README.md](web/README.md#cloudflare).
 
-Các lệnh `ingest`, `backtest`, `estimate-ads` đã có trong CLI nhưng còn là khung; chúng được làm thật ở M1–M3.
 
 Kiểm tra trước khi push (giống hệt CI):
 

@@ -21,6 +21,7 @@ from app.ingest.sku_matching import (
     add_bundle_consumption,
     alias_id_for,
     apply_confirmation,
+    has_code,
     load_known_aliases,
     norm_name,
     resolve,
@@ -152,6 +153,58 @@ def test_price_above_list_is_penalised() -> None:
     bad = resolve([AliasRecord(source_type="cost", raw_name="ao giu nhiet nam size m",
                                price=900000)], cat).matches[0]  # fmt: skip
     assert ok.score is not None and bad.score is not None and bad.score < ok.score
+
+
+def test_row_codes_split_same_name_lines_but_score_as_no_code() -> None:
+    assert has_code("GD0001-XA") and has_code("BN-XANH")
+    assert not has_code("") and not has_code("row:12")
+    cat = [
+        CatalogSku(sku_id=f"KE{k}-XANH", product_id=f"KE{k}",
+                   product_name=f"Kệ gia vị xoay (mẫu {k})", variant_name="Xanh")
+        for k in (2, 3)
+    ]  # fmt: skip
+    name = "Kệ gia vị xoay (mẫu - xanh"
+    merged = resolve(
+        [
+            AliasRecord(source_type="cost", raw_name=name, price=50000),
+            AliasRecord(source_type="cost", raw_name=name, price=52000),
+        ],
+        cat,
+    )
+    assert [m.reason for m in merged.matches] == ["duplicate_raw_name"]  # one alias for 2 lines
+    split = resolve(
+        [
+            AliasRecord(source_type="cost", raw_code="row:7", raw_name=name, price=50000),
+            AliasRecord(source_type="cost", raw_code="row:9", raw_name=name, price=52000),
+        ],
+        cat,
+    )
+    assert len(split.matches) == 2 and len({m.alias_id for m in split.matches}) == 2
+    for m in split.matches:  # still ambiguous by name: each line waits for the user
+        assert m.status == "pending" and m.method == "fuzzy" and m.reason == "low_margin"
+    assert {m.sku_id for m in split.matches} == {"KE2-XANH", "KE3-XANH"}  # 1–1 suggestions
+
+
+def test_row_code_keeps_shorthand_rule() -> None:
+    """A stock-sheet shorthand used for 2 internal codes makes the name ambiguous for a
+    cost line, with or without a ``row:`` code (ING-08 Q5)."""
+    cat = [
+        CatalogSku(sku_id="TUI-G1", product_id="TUI", product_name="Túi zip bảo quản TP",
+                   variant_name="Gói 1"),
+        CatalogSku(sku_id="TUI2-G1", product_id="TUI2",
+                   product_name="Túi zip bảo quản TP (mẫu 2)", variant_name="Gói 1"),
+    ]  # fmt: skip
+    short = "Túi zip bảo quản TP - gói 1"
+    inv = [
+        AliasRecord(source_type="inventory", raw_code="TZ01-G1", raw_name=short),
+        AliasRecord(source_type="inventory", raw_code="TZ02-G1", raw_name=short),
+    ]
+    for code in ("", "row:5"):
+        alone = resolve([AliasRecord(source_type="cost", raw_code=code, raw_name=short)], cat)
+        assert alone.matches[0].status == "auto_accepted"  # without the stock sheet
+        res = resolve([*inv, AliasRecord(source_type="cost", raw_code=code, raw_name=short)], cat)
+        (cost,) = [m for m in res.matches if m.source_type == "cost"]
+        assert cost.status == "pending", code
 
 
 # ================================================================ persistence

@@ -118,9 +118,11 @@ def _truth_for_aliases(size: str) -> dict[tuple[str, str, str], set[str]]:
     with_cost = gt[~gt["sku"].isin(missing)]
     if len(cost) != len(with_cost):
         raise RuntimeError("gia_von_nhap_tay.csv không thẳng hàng với sku_that.csv")
-    for raw, sku in zip(cost["tên sp"], with_cost["sku"], strict=True):
+    for i, (raw, sku) in enumerate(zip(cost["tên sp"], with_cost["sku"], strict=True)):
         truth[("cost", "", str(raw))].add(str(sku))
         truth[("cost", "", str(raw).strip())].add(str(sku))
+        # Lines typed with the same name are separate aliases ``row:<file line>``.
+        truth[("cost", f"row:{i + 2}", str(raw))].add(str(sku))
     for sku in gt["sku"]:
         truth[("orders", str(sku), "*")].add(str(sku))
     return truth
@@ -686,14 +688,20 @@ def _summary(report: IngestReport, seconds: float, matching: dict[str, Any], pla
         *[c for c in planted if c.key == "du_lieu_ca_nhan"],
     ]
     if live:
-        worst = max(x["seconds"] for x in live)
+        secs = sorted(x["seconds"] for x in live)
+        worst = secs[-1]
+        p50 = secs[(len(secs) - 1) // 2]
+        p95 = secs[min(len(secs) - 1, round(0.95 * (len(secs) - 1)))]
         out.append(
             Check(
                 "live_hour",
                 "Nạp 1 giờ live 11.11 (PNL-04)",
-                f"tối đa {worst:.1f} giây / {len(live)} giờ".replace(".", ","),
+                (
+                    f"p50 {p50:.2f} · p95 {p95:.2f} · tối đa {worst:.2f} giây / {len(live)} giờ"
+                ).replace(".", ","),
                 f"< {T_LIVE_S:g} giây",
                 worst < T_LIVE_S,
+                {"p50": p50, "p95": p95, "max": worst},
             )
         )
     return out
