@@ -65,7 +65,8 @@ def test_demo_characters(demo_live: Live) -> None:
         ups = [a for a in alarms if a.sku_id == r.sku_id and a.direction == "up"]
         assert ups, r.sku_id
         h = (pd.Timestamp(ups[0].hour) + pd.Timedelta(hours=7)).hour
-        assert 7 <= h <= 15, (r.sku_id, h)
+        # product shock detector: ≤ 3 h after the viral start (7–8h), M2 "Hoàn thiện M2"
+        assert 7 <= h <= 10, (r.sku_id, h)
         at = ups[0].hour + timedelta(hours=1)
         nf = service.forecast_sku(
             conn, r.sku_id, at, 24, drift_active=active_up(ups, at), matrix=m, persist=False

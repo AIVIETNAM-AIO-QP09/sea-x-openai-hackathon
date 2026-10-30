@@ -10,7 +10,15 @@ import pytest
 
 from app.core.events import DriftDetected
 from app.forecast import censoring
-from app.forecast.drift import active_up, cusum, scan
+from app.forecast.drift import (
+    active_up,
+    cusum,
+    llr_cusum_pooled,
+    merge_alarms,
+    nb_llr,
+    scan,
+    scan_product,
+)
 from app.forecast.labels import WAPE_FLOOR_TOL, confidence_label, coverage_ok, decide_label, wape_ok
 from app.forecast.metrics import (
     ScoreRow,
@@ -62,6 +70,78 @@ def test_censoring_keeps_last_units_of_a_stockout_hour() -> None:
 def test_low_confidence_hours_count_half() -> None:
     w = censoring.level_weights(np.array([True, True, False]), np.array([1.0, 0.5, 1.0]))
     assert w.tolist() == [1.0, 0.5, 0.0]
+
+
+def _days(n_skus: int, days: int, rate: float) -> tuple[np.ndarray, np.ndarray]:
+    prof = np.full(24, 1 / 24)
+    y = np.full((n_skus, days, 24), rate / 24)
+    exp = np.broadcast_to(prof, (n_skus, days, 24)).copy()
+    return y, exp
+
+
+def test_long_stockout_carries_level_from_before_the_shelf_emptied() -> None:
+    # 20 days at 24/day, then the last 2 in-stock days sell almost nothing (shelf nearly
+    # empty) and the item is out for 25 days: the carried level is the pre-stockout one,
+    # not the tail of the trailing window (M2 "Hoàn thiện M2")
+    y, exp = _days(1, 47, 24.0)
+    y[0, 20:22] = 1 / 24
+    so = np.zeros_like(y, dtype=bool)
+    so[0, 22:] = True
+    y = np.where(so, 0.0, y)
+    c = censoring.adjust_demand(y, np.ones_like(so), so, np.ones_like(y), exp)
+    pre = (5 * 24 + 2 * 1) / 7  # last 7 days of in-stock exposure
+    assert c.carried[0, -1] and not c.carried[0, 21]
+    assert c.level[0, -1] == pytest.approx(pre, rel=1e-6)
+    assert c.demand_adj[0, -1] == pytest.approx(pre, rel=1e-6)
+
+
+def test_long_stockout_follows_siblings_and_fades() -> None:
+    # A and B are variants of one product. A sells out on day 10; B doubles from day 10
+    # and is in stock until day 30 (its 14-day level stays reliable ~10 days more)
+    y, exp = _days(2, 50, 24.0)
+    y[1, 10:] = 48 / 24
+    so = np.zeros_like(y, dtype=bool)
+    so[0, 10:] = True
+    so[1, 30:] = True
+    y = np.where(so, 0.0, y)
+    ones = np.ones_like(y)
+    prod = np.array([0, 0])
+    c = censoring.adjust_demand(y, np.ones_like(so), so, ones, exp, product=prod)
+    alone = censoring.adjust_demand(y[:1], np.ones_like(so[:1]), so[:1], ones[:1], exp[:1])
+    assert alone.level[0, 29] == pytest.approx(24.0)  # no sibling: flat
+    assert 24.0 * 1.4 < c.level[0, 29] <= 24.0 * 2.05  # follows B while B is observed
+    # once B is out too, the evidence ages: the growth fades back towards the base
+    assert c.level[0, 49] < c.level[0, 40] <= c.level[0, 29]
+    assert c.level[0, 49] < 24.0 * 1.2
+
+
+def test_long_stockout_trend_item_follows_damped_trend() -> None:
+    days = 60
+    rate = 4.0 * np.exp(0.04 * np.arange(days))  # +4 %/day trend
+    y, exp = _days(1, days, 1.0)
+    y[0] = (rate[:, None] / 24) * np.ones(24)
+    so = np.zeros_like(y, dtype=bool)
+    so[0, 40:] = True
+    y = np.where(so, 0.0, y)
+    args = (y, np.ones_like(so), so, np.ones_like(y), exp)
+    flat = censoring.adjust_demand(*args)
+    tr = censoring.adjust_demand(*args, trend=np.array([True]))
+    assert tr.level[0, -1] > flat.level[0, -1]
+    cap = np.exp(censoring.SLOPE_CLIP * censoring.TREND_PHI / (1 - censoring.TREND_PHI))
+    assert tr.level[0, -1] <= flat.level[0, -1] * cap  # damped: bounded growth
+
+
+def test_low_confidence_stockout_hour_adds_half_the_correction() -> None:
+    y, exp = _days(1, 20, 24.0)
+    so = np.zeros_like(y, dtype=bool)
+    so[0, -1, 12:] = True
+    y = np.where(so, 0.0, y)
+    conf = np.ones_like(y)
+    conf[0, -1, 12:] = 0.5
+    full = censoring.adjust_demand(y, np.ones_like(so), so, np.ones_like(y), exp)
+    half = censoring.adjust_demand(y, np.ones_like(so), so, conf, exp)
+    assert full.demand_adj[0, -1] == pytest.approx(24.0)
+    assert half.demand_adj[0, -1] == pytest.approx(12.0 + 6.0)
 
 
 # ---------------------------------------------------------------------- metrics
@@ -175,6 +255,44 @@ def test_cusum_down_alarm_has_checklist() -> None:
     hours = [t0 + timedelta(hours=h) for h in range(12)]
     al = scan("X", hours, np.zeros(12), np.full(12, 4.0), 3.0)
     assert al[0].direction == "down" and al[0].checklist
+
+
+def test_nb_llr_negative_under_forecast_positive_under_doubling() -> None:
+    rng = np.random.default_rng(1)
+    lam, k = np.full(20000, 1.5), 3.0
+    p0 = k / (k + lam)
+    y0 = rng.negative_binomial(k, p0).astype(float)
+    y1 = rng.negative_binomial(k, k / (k + 2 * lam)).astype(float)
+    assert nb_llr(y0, lam, np.full_like(lam, k), 2.0).mean() < 0
+    assert nb_llr(y1, lam, np.full_like(lam, k), 2.0).mean() > 0
+
+
+def test_product_detector_is_faster_than_one_variant_and_quiet_without_shock() -> None:
+    rng = np.random.default_rng(3)
+    lam = np.full((3, 24), 1.2)
+    y = rng.poisson(lam).astype(float)
+    assert not llr_cusum_pooled(y, lam, [3.0] * 3).alarms
+    y[:, 8:] = rng.poisson(3.6, (3, 16))  # all variants ×3 from 08:00
+    pooled = llr_cusum_pooled(y, lam, [3.0] * 3).alarms
+    single = [cusum(y[v], lam[v], 3.0).alarms for v in range(3)]
+    assert pooled and pooled[0][1] == "up" and 8 <= pooled[0][0] <= 10
+    assert all(pooled[0][0] <= s[0][0] for s in single if s)
+
+
+def test_scan_product_raises_on_variants_in_stock_and_merge_dedupes() -> None:
+    t0 = datetime(2026, 11, 11, 0, tzinfo=UTC)
+    hours = [t0 + timedelta(hours=h) for h in range(10)]
+    lam = np.full((2, 10), 1.0)
+    y = np.full((2, 10), 6.0)
+    ins = np.ones((2, 10), dtype=bool)
+    ins[1, :] = False  # B out of stock all day: its hours do not count, no alarm on B
+    al = scan_product(["A", "B"], hours, y, lam, [3.0, 3.0], ins)
+    assert al and {a.sku_id for a in al} == {"A"} and al[0].scope == "product"
+    own = scan("A", hours, y[0], lam[0], 3.0)
+    merged = merge_alarms(own, al)
+    keys = [(a.sku_id, a.hour, a.direction) for a in merged]
+    assert len(keys) == len(set(keys))
+    assert merged[0].scope == "sku" or merged[0].hour < own[0].hour
 
 
 # ---------------------------------------------------------------------- champions

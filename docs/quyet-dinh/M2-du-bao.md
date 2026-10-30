@@ -11,7 +11,7 @@ Task: FC-01..FC-09 (FC-10 DDL đã có ở M0), EVF-01 (phần dự báo của E
 | `service.fit_all(conn, origin=None, drift_active=…)` | | FitContext tại mốc, ghi `skus.demand_group` (trừ nhóm người dùng đặt), fit champion từng SKU |
 | `service.forecast_skus(conn, sku_ids=None, origin=None, horizon_hours=72, drift_active=…, persist=True)` / `forecast_sku(...)` | | `ForecastResult` có nhãn + lý do, ghi bảng `forecasts` (kèm `input_hash`); tự áp giá cam kết (`sale_commitments.committed_price`) |
 | `service.predict_many(jobs)` | | Predict song song (thread, numpy nhả GIL) |
-| `service.scan_drift(matrix, results, until)` → `DriftAlarm` (`.event()` = `DriftDetected`), `drift.active_up(alarms, at)` | `forecast/drift.py` | CUSUM 03 §9; `up` → truyền SKU vào `drift_active` để dùng `nowcast` 24 h |
+| `service.scan_drift(matrix, results, until)` → `DriftAlarm` (`.event()` = `DriftDetected`), `drift.active_up(alarms, at)` | `forecast/drift.py` | CUSUM 03 §9 (+ detector sản phẩm cho `up`, `pooled=True` mặc định, `DriftAlarm.scope`, xem H4); `up` → truyền SKU vào `drift_active` để dùng `nowcast` 24 h |
 | `service.set_demand_group(conn, sku, group | None)` | | Người dùng sửa nhóm (`source='user'`), `None` trả về tự động |
 | `service.load_matrix(conn)`, `context.build_fit_context(matrix, origin)` | | Panel → mảng dày `[sku, giờ]`; FitContext chỉ chứa dữ liệu < origin |
 
@@ -119,3 +119,98 @@ Fixture tạm `mock_loader.py` đã bị agent M1 xóa; test dùng `tests.mockda
 4. **pyproject:** `filterwarnings` cho `Pandas4Warning` của DuckDB `.df()`; marker `e2e` đã có, `test_demo_e2e.py` dùng nó (~1 phút).
 5. **Plan 03 §10:** xem lại định nghĩa coverage cho số đếm nhỏ và ngưỡng WAPE ngày thường (sàn nhiễu 35%).
 6. `run_all.py` (EVAL-02) gọi `eval_forecast.run(size, db)`.
+
+## Hoàn thiện M2 (30/10)
+
+Hai việc còn dở của 03 §10: censoring (|bias| ≤ 10%) và phát hiện đột biến bình nước. Code: `forecast/censoring.py`, `forecast/drift.py`, `service.scan_drift`, `context.py` (truyền mã sản phẩm và cờ nhóm `trend` vào censoring). Test hồi quy: `test_pure.py` (4 test censoring, 3 test drift); `test_service.py` / `test_demo_e2e.py` siết giờ báo động. Định nghĩa phép đo trong `eval_forecast.py` **không đổi**. Mục này thay cho các dòng censoring/drift trong "Vì sao chưa đạt" ở trên.
+
+### H1. Censoring: phân tích nguyên nhân bằng số
+
+Tập chấm: 24 SKU có ≥ 5 giờ hết hàng trong cửa sổ 09–11/10, `profile_ewma`, p50 tổng ngày so với `nhu_cau_that`. Tổng nhu cầu thật 708, dự báo (trước) 444,5: thiếu 263,5.
+
+| Nhóm (theo đáp án) | Nhu cầu thật | Dự báo trước | bias | Ghi chú |
+|---|---|---|---|---|
+| on_dinh | 119 | 98 | −18% | lịch sử không hết hàng; hết hàng **trong** cửa sổ |
+| mua_vu | 86 | 46 | −47% | như trên; `profile_ewma` không có mùa vụ |
+| trend | 503 | 300,5 | −40% | |
+| trong đó 9 SKU **0 giờ còn hàng trong 14 ngày trước mốc** | 329 | 150,5 | −54% | COCKHUAY-XANH, MOCKHOA3-A, MOCKHOA2-A, GUONGLED*-XANH, LEDCUON2-5M, COCKHUAY3-* |
+
+Hai nguồn sai khác nhau:
+1. **Chọn mẫu theo kết quả (~61 sp, 23% phần thiếu).** Điều kiện "≥ 5 giờ hết hàng trong cửa sổ" chọn đúng những SKU mà nhu cầu 10.10 vượt tồn, tức là dự báo vốn đã thấp. Với các SKU on_dinh/mua_vu này lịch sử không bị chặn, censoring không có gì để sửa (bản hiệu chỉnh và không hiệu chỉnh gần bằng nhau: 98 vs 97, 46 vs 45).
+2. **Hết hàng nhiều tuần ở SKU trend (178,5 sp, 68%).** COCKHUAY-XANH: bán 3–4 sp/ngày tới 15/09 rồi hết hàng 24 ngày; biến thể HONG còn hàng tới 27/09, sau đó cả sản phẩm hết 12 ngày. Trong thời gian đó nhu cầu thật tăng từ ~4 lên 13–26 sp/ngày (73 đúng ngày 10.10). MOCKHOA3-A: ~2 sp/ngày trước khi hết, 70 sp ngày 10.10. App không có dữ liệu nào quan sát được trong khoảng này (không có lượt xem/giỏ hàng; mọi biến thể đều hết).
+
+**Phép thử "lịch sử hoàn hảo"** (chỉ trong eval, script tạm): thay giờ hết hàng trong lịch sử bằng nhu cầu bị mất thật (chia đều cho các giờ hết hàng của ngày, tắt cờ hết hàng), giữ nguyên model và nhóm. Bias −6,4% (trend +3%; on_dinh/mua_vu vẫn −18%/−47%). Nghĩa là: (a) nếu *biết* nhu cầu lúc hết hàng thì đạt ≤ 10%; (b) phần còn thiếu nằm ở nhu cầu không quan sát được, không phải ở công thức hiệu chỉnh trên giờ còn hàng.
+
+### H2. Censoring: đổi phương pháp (03 §4)
+
+Khi cửa sổ 14 ngày còn < 3 ngày "phần kỳ vọng" còn hàng (`REF_SHARE`), bản cũ tính mức trên vài giờ cuối trước khi hết (nhiễu, thường thấp vì kệ sắp trống) rồi kéo phẳng. Thay bằng `L = L_pre · g_sib · g_trend`:
+- `L_pre` = mức trên 7 ngày phần kỳ vọng còn hàng gần nhất, lùi xa bao nhiêu cũng được (mức trước khi hết);
+- `g_sib` = tăng trưởng của các **biến thể cùng sản phẩm** còn quan sát được, mờ dần theo tuổi thông tin: mũ `φ^(d − ℓ)`, `φ = 0,85` (như `trend_damped`), `ℓ` = ngày cuối còn quan sát được;
+- `g_trend` = đường trend tắt dần (độ dốc OLS của log mức trước khi hết, `φ = 0,85`, kẹp ±10%/ngày) cho SKU nhóm `trend`;
+- giờ hết hàng có `stockout_conf < 0,7` chỉ cộng một nửa phần hiệu chỉnh (giờ còn hàng conf thấp vẫn nửa trọng số như cũ); phần hiệu chỉnh `max(y_t, L̂·…)` tính theo **từng giờ** đúng công thức 03 §4 (trước: theo ngày).
+
+Không dùng `ground_truth` trong app; tham số dùng chung cho mọi SKU.
+
+**Đã thử và bỏ (có số):**
+- *`g_sib` không mờ dần*: dd_1010 −32,9%, nhưng tháng 11 các SKU trend đã hết sóng mà vẫn hết hàng bị dự báo cao: `ban_thua` normal_roll bias +16% → +73%, WAPE champion toàn shop normal_roll 41,8% → 43,0%, live_1111 39,9% → 41,8%. Cùng một tín hiệu đúng cho 10.10 lại sai cho 11/11: hướng thay đổi của nhu cầu khi không quan sát được là không biết được.
+- *ADI và slope28 chỉ tính trên ngày còn hàng* (để SKU trend hết hàng nhiều tuần không thành `ban_thua`): độ chính xác phân nhóm 88,3% → 88,7%, nhưng các SKU này thành `on_dinh`/`mua_vu`, champion on_dinh ngày thường WAPE/floor 1,07 → 1,18 và `verified` 44 → 0. Bỏ.
+- *Ép `g_trend` cho mọi SKU trend thật (dùng đáp án, chỉ để đo trần)*: bias −33,9%; COCKHUAY3-* (nhu cầu đã giảm trong lúc hết hàng) bị dự báo gấp ~5 lần. Kéo dài đường trend không cứu được.
+
+### H3. Censoring: kết quả (bias p50 so với `nhu_cau_that`, SKU ≥ 5 giờ hết hàng, `eval_forecast`)
+
+| Đợt | SKU | Trước | Sau | Không hiệu chỉnh |
+|---|---|---|---|---|
+| dd_0909 | 6 | −38,6% | −41,6% | −55,0% |
+| **dd_1010** | 24 | **−37,2%** | **−34,7%** | −68,6% |
+| gift_1020 | 32 | −35,8% | −32,2% | −67,2% |
+| live_1111 | 22 | −14,3% | −19,3% | −47,2% |
+| normal_roll | 35 | −23,8% | −22,6% | −65,5% |
+
+WAPE trên cùng tập (trước → sau): dd_0909 48,5% → 51,5%, dd_1010 64,2% → 63,0%, gift 68,1% → 66,6%, live 44,1% → 41,7%, normal_roll 70,3% → 69,2%. 9 SKU hết hàng trọn 14 ngày: 150,5 → 162 sp (thật 329).
+
+**Không đạt ≤ 10%: đạt −34,7%** (trước −37,2%; không hiệu chỉnh −68,6%). Lý do là giới hạn thông tin, có bằng chứng: lịch sử hoàn hảo cho −6,4%; 68% phần thiếu nằm ở 9 SKU không có một giờ còn hàng nào trong 14 ngày trước mốc; 23% là hiệu ứng chọn mẫu, không liên quan censoring. Đề xuất cho chủ plan (chưa làm, không đổi phép đo): chấm thêm trên SKU có ≥ 1 ngày còn hàng trong 7 ngày trước mốc, hoặc ghi trên slide "hiệu chỉnh lấy lại một nửa phần thiếu; phần còn lại là nhu cầu không quan sát được".
+
+### H4. Drift bình nước: detector đột biến theo sản phẩm (03 §9)
+
+Nguyên nhân trễ: mỗi biến thể chỉ 1–2 sp/giờ buổi sáng; z-CUSUM một biến thể cần 3–4 giờ vượt mới qua ngưỡng 5 (XANH: giờ 9 bán 0 làm S⁺ tụt). Đã thử **thêm z-CUSUM gộp sản phẩm** (hợp với per-SKU): báo sớm, nhưng báo động giả ngày thường 1,59 → 3,71 / 100 SKU-ngày, ngày đôi 4,39 → 12,07 (gộp thì bắt cả lệch 20–50% của dự báo). Bỏ.
+
+Thay bằng: sản phẩm ≥ 2 biến thể, `up` = CUSUM của **log-likelihood ratio NegBin "nhu cầu = 2× dự báo"** cộng trên các biến thể còn hàng (giờ đông trọng số lớn, giờ vắng một đơn ít); `down` giữ z-CUSUM từng SKU (giờ hết hàng bị loại); sản phẩm một biến thể giữ nguyên plan. Ngưỡng 6 = giá trị nhỏ nhất trong {4, 5, …, 10} mà **tổng số báo động** trên ngày quá khứ không vượt bản per-SKU ở mọi loại ngày — chọn không cần đáp án.
+
+Báo động giả (đo bằng đáp án: `up` khi λ thật 6 giờ gần nhất < 1,5× dự báo, `down` khi > 0,67×), dự báo champion của backtest, CUSUM chạy theo ngày:
+
+| Loại ngày | SKU-ngày | Báo động / 100: trước → sau | Báo động giả / 100: trước → sau |
+|---|---|---|---|
+| Ngày thường (28/10–10/11) | 4093 | 1,95 → 0,95 | 1,59 → 0,68 |
+| Ngày đôi 8.8/9.9/10.10 | 820 | 18,54 → 17,80 | 4,39 → 3,41 |
+| ±1 ngày đôi | 1640 | 1,65 → 0,85 | 1,59 → 0,67 |
+
+11.11 (`demo`, `eval_forecast`): DEN viral 8:00 → báo 10:00 (2 giờ, như trước); HONG 8:00 → 10:00 (2 giờ, như trước); **XANH 7:00 → 10:00 (3 giờ; trước 11:00, 4 giờ)**; cả ba chuyển `nowcast`. Ngưỡng 4 báo 9:00 cả ba nhưng báo động ngày đôi lên 29,4/100, nên không dùng. `nho`: XANH 15:00 → 10:00. AOGIUNHIET-M: 0 báo `down` trước và sau khi hết hàng (down vẫn per-SKU, giờ hết hàng bị loại; detector sản phẩm không phát `down`).
+
+`nowcast` khi báo sớm có ít giờ viral hơn: trên `nho` mức nowcast giờ đầu chỉ ~1,3× dự báo sáng (XANH), sau 2 giờ ≥ 1,5× (nowcast được fit lại mỗi giờ khi drift bật). `test_binhnuoc_drift_up_then_nowcast` kiểm cả hai mốc.
+
+### H5. Tiêu chí M2 trước/sau (`eval_forecast --size demo`, DB dựng bằng pipeline, cùng máy, cùng lúc)
+
+| Kiểm tra | Trước | Sau |
+|---|---|---|
+| WAPE 10.10 champion / baseline 7 ngày (tốt hơn) | 37,0% / 68,5% (46,0%) | 37,0% / 68,6% (46,0%) ✓ |
+| … / baseline tuần trước | 37,0% / 71,0% (47,9%) | 37,0% / 71,0% (47,9%) ✓ |
+| Champion ngày thường on_dinh: WAPE/floor; PIT | 1,07; 84,5% | 1,07; 84,5% ✓ |
+| Oracle / floor ≈ oracle / dự báo kém trượt | ✓ / ✓ / ✓ | ✓ / ✓ / ✓ |
+| Nhãn 300/300 | verified 44, reference 242, scenario 14 | giống hệt ✓ |
+| WAPE 10.10 on_dinh + mua_vu | 34,9% | 34,7% ✓ |
+| WAPE champion toàn shop dd_1010 / gift / live / normal | 37,0 / 46,7 / 39,9 / 41,8% | 37,0 / 46,5 / 40,1 / 41,5% |
+| Phân nhóm / nhân vật demo | 88,3% / 12/12 | 88,3% / 12/12 ✓ |
+| Censoring 10.10 | −37,2% | −34,7% ✗ (H3) |
+| Drift BINHNUOC500-* | 2/2/4 giờ ✗ | 2/2/3 giờ ✓ |
+| Hiệu năng fit / predict | 2,8 s / 4,5 s | 2,4 s / 3,6 s (hai lượt eval chạy song song; máy rảnh trước đây 0,8 s + 1,5 s) |
+
+### H6. Ảnh hưởng tới số demo M3 (what-if)
+
+`demo_whatif --only 1,4g,5,8a` chạy với forecast HEAD và forecast mới (cùng dữ liệu, cùng lúc):
+- [1] `schedule_hours:0-2,12-14`, +3,99 tr so với continue — giống nhau;
+- [4g] `recommend reduce_budget:0.3` (P đạt 0,81; continue 0,83; +1,66 tr so với continue) — giống nhau;
+- [5] `pause`, +5,13 tr so với continue — giống nhau;
+- [8a] `undetermined`, best `pause`, p = 0,91 — giống nhau; chỉ khác một dòng lý do (nhu cầu COCKHUAY-HONG, đang hết hàng, 5 → 3 sp).
+- iROAS CD002 = 4,42 ở **cả hai** bản (ước lượng ads không đọc dự báo), nên 4,49 → 4,42 không do M2.
+
+Bản quét `whatif_full.*` (~17:30) chạy giữa lúc code censoring/phân nhóm đang sửa dở (khi đó đang thử ADI theo ngày còn hàng, H2, làm đổi nhóm một số SKU); `none_meets_goal` của [4g] không tái hiện với code cuối. Không sửa tài liệu pitch.

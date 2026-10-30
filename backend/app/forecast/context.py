@@ -479,6 +479,11 @@ def build_fit_context(
         yd, w, p_sku, weekday_d, lpre, [int(d) for d in np.flatnonzero(is_pay & normal)]
     )
 
+    _, prod_code = np.unique(
+        np.array([str(m.product_id.get(s, s)) for s in m.sku_ids], dtype=object),
+        return_inverse=True,
+    )
+
     def finish(group_list: list[str]) -> dict[str, Any]:
         masks = _group_masks(group_list)
         e_dd = _double_day_factors(yd, w, p_sku, weekday_d, lpre, dd_days, masks)
@@ -514,6 +519,8 @@ def build_fit_context(
             cd,
             expected,
             censoring=censoring,
+            product=prod_code,
+            trend=np.array([g == "trend" for g in group_list], dtype=bool),
         )
         share = cens.expected_share
         valid = (share > 0.05) & (np.arange(n_days)[None, :] >= first_day[:, None])
