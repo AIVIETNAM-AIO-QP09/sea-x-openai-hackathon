@@ -1,5 +1,4 @@
-# Dữ liệu sinh ra (mock-data/out/ được commit để cả team dùng ngay)
-mock-data/out/*/live_stream/
+# Database local (mock-data/out/ được commit để cả team dùng ngay)
 backend/data/
 backend/eval/reports/
 

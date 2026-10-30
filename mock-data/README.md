@@ -100,4 +100,4 @@ src/export.js    Xuất file "bẩn" như thật và file đáp án
 src/rng.js       Số ngẫu nhiên có seed
 ```
 
-Kết quả nằm trong `out/`. Hai bộ `nho` và `demo` (seed 20261111) được commit sẵn để cả team dùng ngay; `live_stream/` do `replay.js` tạo thì không commit.
+Kết quả nằm trong `out/`. Hai bộ `nho` và `demo` (seed 20261111) được commit sẵn để cả team dùng ngay.

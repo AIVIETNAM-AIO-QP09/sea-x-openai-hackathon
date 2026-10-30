@@ -42,7 +42,10 @@ Chi tiết: [docs/dev-plan/01-kien-truc-va-cong-nghe.md](docs/dev-plan/01-kien-t
 .
 ├─ README.md                      # file này
 ├─ MegaDay-Twin-...pdf            # tài liệu sản phẩm gốc
-├─ docs/dev-plan/                 # plan kỹ thuật: kiến trúc, dữ liệu, mô hình, AI, API, UI, lộ trình
+├─ docs/
+│  ├─ dev-plan/                   # plan kỹ thuật: kiến trúc, dữ liệu, mô hình, AI, API, UI, lộ trình
+│  ├─ pitch/                      # bản nháp nội dung pitch
+│  └─ so-do/                      # sơ đồ hệ thống (HTML)
 ├─ mock-data/                     # bộ sinh dữ liệu shop giả lập (Node.js, không thư viện ngoài)
 │  ├─ generate.js                 # sinh dữ liệu → mock-data/out/<cỡ>/
 │  ├─ replay.js                   # phát lại ngày 11.11 theo giờ
@@ -174,6 +177,8 @@ Chi tiết: [mock-data/README.md](mock-data/README.md).
 | [13 · Rủi ro và câu hỏi mở](docs/dev-plan/13-rui-ro.md) | Những điều team cần chốt |
 | [mock-data/README.md](mock-data/README.md) | Định dạng file, lỗi cài sẵn, mô hình sinh dữ liệu |
 | [Cẩm nang pitch](https://claude.ai/artifact/NuSEaHjNHnzrhKknD4smWU) | Pitch lead (cần chủ doc chia sẻ quyền xem) |
+| [docs/pitch/noi-dung-pitch.md](docs/pitch/noi-dung-pitch.md) | Bản nháp nội dung pitch, đọc được ngay trên GitHub |
+| [docs/so-do/so-do-he-thong.html](docs/so-do/so-do-he-thong.html) | Sơ đồ hệ thống 5 lớp + lớp AI; tải về rồi mở bằng trình duyệt ([bản online](https://claude.ai/artifact/WT3zRbF5WXiJwzZ6w79hg5)) |
 
 ## Mốc
 
@@ -208,7 +213,7 @@ Mã task (`INF`, `ING`, `PNL`, `FC`, `ADS`, `ECO`, `SIM`, `ORC`, `AI`, `API`, `W
 3. **Người duyệt mọi hành động.** AI chỉ đề xuất tham số (`set_by=ai_suggested`); không tự tạo mục tiêu, không tự thao tác quảng cáo.
 4. **Bỏ PII ngay khi nhập.** Tên, số điện thoại, địa chỉ người mua không được lưu vào DB và không gửi lên OpenAI.
 5. **Dữ liệu ngoài là dữ liệu, không phải lệnh.** Ghi chú khách, tên sản phẩm, nội dung file luôn được bọc nhãn untrusted khi đưa cho AI.
-6. **Không commit bí mật.** `.env`, `backend/data/` (DuckDB) và `live_stream/` (dữ liệu phát lại, thay đổi liên tục) đã nằm trong `.gitignore`. Dữ liệu giả lập trong `mock-data/out/` thì được commit.
+6. **Không commit API key.** `.env` và `backend/data/` (DuckDB local) nằm trong `.gitignore`. Mọi thứ khác, kể cả dữ liệu giả lập trong `mock-data/out/`, đều được commit.
 7. **Trung thực về độ bất định.** Mọi con số có nhãn Đã kiểm / Tham khảo / Kịch bản; dữ liệu mô phỏng luôn được gọi là mô phỏng.
 
 ## Việc đầu tiên
