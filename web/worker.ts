@@ -18,6 +18,7 @@ export default {
           url.pathname.startsWith('/_next/') ||
           url.pathname.startsWith('/cases/') ||
           url.pathname.startsWith('/api/auth/') ||
+          url.pathname.startsWith('/api/pm/') ||
           url.pathname === '/api/workflow/ai' ||
           url.pathname === '/icon.svg' ||
           url.pathname === '/favicon.ico';
