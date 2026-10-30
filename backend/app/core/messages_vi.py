@@ -68,3 +68,36 @@ BACKTEST_DONE = (
     "Backtest xong: {scores} dòng điểm, {champions} champion (nhóm × bối cảnh), {s:.1f} giây."
 )
 FIT_DONE = "Dự báo xong {n} SKU ({horizon} giờ tới). Nhãn tin cậy: {labels}."
+
+# ------------------------------------------------------------------ ads effect (iROAS, 04)
+ADS_DONE = (
+    "Đã ước lượng iROAS cho {n} chiến dịch trong {s:.1f} giây (δ = {delta}, nhịp giờ từ "
+    "{rhythm}). Nhãn tin cậy: {labels}."
+)
+ADS_LINE = (
+    "  {cid:7s} ROAS sàn {roas:>6s} · iROAS {mean:>5s} [{p10}–{p90}] · biên {marg:>5s}"
+    " · hòa vốn {be:>5s} · {label}"
+)
+ADS_NONE = "Không có chiến dịch nào có dữ liệu panel để ước lượng iROAS."
+ADS_RHYTHM_NO_ADS = "SKU không chạy ads"
+ADS_RHYTHM_ALL = "mọi SKU (shop có quá ít SKU không ads)"
+ADS_REASON_DELTA = "Ads còn tác dụng sau khi tắt: δ = {delta} mỗi giờ, dùng chung cho cả shop"
+ADS_REASON_EXCLUDED = "{n} giờ {what} đã bị loại khỏi ước lượng"
+ADS_EXCLUDED_WHAT = {
+    "unknown": "thiếu số liệu ads",
+    "launch": "trong 3 ngày đầu chiến dịch hoặc SKU mới ra mắt",
+    "stock_pause": "tạm dừng ads vì sắp hết hàng",
+    "low_stock": "SKU chính hết hàng hoặc tồn thấp",
+}
+ADS_REASON_OFF_HOURS = "Còn {n} giờ không chi ads sạch để so sánh"
+ADS_REASON_FEW_OFF = "Chỉ còn {n} giờ không chi ads sạch: kết quả gần như chỉ là giả định ban đầu"
+ADS_REASON_WIDE = "Khoảng p10–p90 rộng ({width:.0%} so với trung bình)"
+ADS_REASON_CHECK_DISAGREE = (
+    "So sánh thô giờ hết ngân sách (tăng {crude:.0%}) lệch nhiều so với mô hình ({model:.0%})"
+)
+ADS_REASON_SKU_SPLIT = "Hiệu quả ads ước lượng theo chiến dịch, chia cho SKU theo tỷ trọng bán"
+ADS_REASON_SHORT_TERM = (
+    "iROAS ngắn hạn: chưa tính phần thứ hạng tự nhiên tăng nhờ ads qua nhiều ngày"
+)
+ADS_REASON_PRIOR = "Chưa có dữ liệu ads của chiến dịch: dùng giả định ban đầu"
+ADS_REASON_RHYTHM_ALL = "Nhịp giờ lấy từ mọi SKU vì shop có quá ít SKU không chạy ads"

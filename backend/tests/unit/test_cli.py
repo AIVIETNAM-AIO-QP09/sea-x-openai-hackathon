@@ -37,9 +37,7 @@ def test_reset_yes(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("args", "task"),
-    [
-        (["estimate-ads"], "ADS-06"),
-    ],
+    [],  # every command is implemented; keep the test for future stubs
 )
 def test_stub_commands_report_owner_task(args: list[str], task: str) -> None:
     r = runner.invoke(cli, args)
