@@ -329,8 +329,10 @@ def sku_rows(
         ).fetchall()
     }
     states = {
-        str(r[0]): (r[1], r[2])
-        for r in conn.execute("SELECT sku_id, state, computed_at FROM sku_compute_state").fetchall()
+        str(r[0]): (r[1], r[2], r[3])
+        for r in conn.execute(
+            "SELECT sku_id, state, computed_at, data_as_of FROM sku_compute_state"
+        ).fetchall()
     }
     fcs = latest_forecasts(conn, ids)
     recs = active_recommendations(conn)
@@ -349,7 +351,9 @@ def sku_rows(
         row.recommendation = rec
         stored = states.get(sku)
         res_as_of = fc.data_as_of if fc is not None else None
-        row.compute_state = compute_state(res_as_of, ck.as_of, stored[0] if stored else None)
+        row.compute_state = compute_state(
+            res_as_of, ck.as_of, stored[0] if stored else None, stored[2] if stored else None
+        )
         row.computed_at = (stored[1] if stored else None) or (fc.created_at if fc else None)
         row.confidence = (rec or {}).get("confidence") or (fc.confidence if fc else None)
         # 06 §2 priority without w_force (needs the orchestrator)
