@@ -76,6 +76,7 @@ def parse_intent(
         temperature=0.0,
         text_format=json_schema_format("whatif_intent", strict_schema(WhatIfIntent)),
         flow="whatif_intent",
+        task="fast",
     )
     resp = client.create(req)
     return WhatIfIntent.model_validate(json.loads(resp.text or "{}"))

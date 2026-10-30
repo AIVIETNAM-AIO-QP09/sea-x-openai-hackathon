@@ -1,0 +1,132 @@
+{
+ "key": "510184b52aacd3ca85ebf8f4",
+ "flow": "whatif",
+ "question": "Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao?",
+ "client": "fake",
+ "ok": true,
+ "recorded_at": "2026-10-30T13:59:25.614508+00:00",
+ "steps": [
+  {
+   "request": {
+    "model": "gpt-5",
+    "n_items": 1,
+    "tools": [
+     "get_data_freshness",
+     "list_skus",
+     "get_sku_snapshot",
+     "get_forecast",
+     "get_iroas",
+     "get_goal_and_parameters",
+     "run_scenario",
+     "compare_actions",
+     "compute_breakeven",
+     "draft_decision",
+     "request_approval",
+     "suggest_parameter"
+    ],
+    "last_item": "user",
+    "sources": []
+   },
+   "response": {
+    "text": null,
+    "tool_calls": [
+     {
+      "id": "call_compare_actions_1",
+      "name": "compare_actions",
+      "arguments": "{\"campaign_id\": \"CD002\", \"horizon_hours\": null}"
+     }
+    ],
+    "usage": {
+     "input_tokens": 717,
+     "output_tokens": 20
+    },
+    "model": "fake",
+    "output_items": null
+   }
+  },
+  {
+   "request": {
+    "model": "gpt-5",
+    "n_items": 3,
+    "tools": [
+     "get_data_freshness",
+     "list_skus",
+     "get_sku_snapshot",
+     "get_forecast",
+     "get_iroas",
+     "get_goal_and_parameters",
+     "run_scenario",
+     "compare_actions",
+     "compute_breakeven",
+     "draft_decision",
+     "request_approval",
+     "suggest_parameter"
+    ],
+    "last_item": "function_call_output",
+    "sources": [
+     [
+      "compare_actions",
+      "scn-01M66HQC2K642CDF8Y3D31SVQW"
+     ]
+    ]
+   },
+   "response": {
+    "text": null,
+    "tool_calls": [
+     {
+      "id": "call_run_scenario_2",
+      "name": "run_scenario",
+      "arguments": "{\"campaign_id\": \"CD002\", \"horizon_hours\": null, \"actions\": null, \"param_overrides\": [], \"goal_override\": {\"kind\": \"sell_target\", \"target_units\": 97, \"deadline\": null, \"sell_target_prob\": null, \"max_loss_vnd\": null}}"
+     }
+    ],
+    "usage": {
+     "input_tokens": 2356,
+     "output_tokens": 20
+    },
+    "model": "fake",
+    "output_items": null
+   }
+  },
+  {
+   "request": {
+    "model": "gpt-5",
+    "n_items": 5,
+    "tools": [
+     "get_data_freshness",
+     "list_skus",
+     "get_sku_snapshot",
+     "get_forecast",
+     "get_iroas",
+     "get_goal_and_parameters",
+     "run_scenario",
+     "compare_actions",
+     "compute_breakeven",
+     "draft_decision",
+     "request_approval",
+     "suggest_parameter"
+    ],
+    "last_item": "function_call_output",
+    "sources": [
+     [
+      "compare_actions",
+      "scn-01M66HQC2K642CDF8Y3D31SVQW"
+     ],
+     [
+      "run_scenario",
+      "scn-01M66HQD48J2QQFXA5XCXJNPX1"
+     ]
+    ]
+   },
+   "response": {
+    "text": "Hiện tại đề xuất là chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 [[src:scn-01M66HQC2K642CDF8Y3D31SVQW]]. Theo kịch bản giả định chỉ tiêu 97 cái, nên giảm ngân sách 30% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]]: xác suất bán đủ 81% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]], còn chỉ chạy khung giờ chỉ đạt 57% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]]. Đây là giả định chưa xảy ra, mức tin cậy kịch bản.",
+    "tool_calls": [],
+    "usage": {
+     "input_tokens": 3931,
+     "output_tokens": 99
+    },
+    "model": "fake",
+    "output_items": null
+   }
+  }
+ ]
+}

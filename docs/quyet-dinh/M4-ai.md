@@ -1,6 +1,6 @@
 # Nhật ký quyết định · Nền tảng lớp AI (M4: AI-01, AI-02, AI-03, AI-04, AI-06, AI-07, AI-09, AI-10, khung EVAL-05)
 
-Code: `backend/app/ai/` (chưa nối endpoint). Test: `backend/tests/unit/ai/` (143 test, gồm 4 test e2e trên `demo`).
+Code: `backend/app/ai/` (endpoint: mục 6 "AI ra API"). Test: `backend/tests/unit/ai/` (143 test, gồm 4 test e2e trên `demo`).
 
 | File | Nội dung |
 |---|---|
@@ -85,7 +85,7 @@ Dependency không có parser YAML nên câu eval viết bằng JSON. Mỗi câu 
 - `guard.py` import `app.ingest.adapters` trước `app.ingest.pii` vì hai module import vòng (lỗi sẵn có ở ingest, không sửa).
 - `cost_estimate_usd` để NULL vì chưa có bảng giá model.
 
-## 3. Endpoint cần thêm ở đợt sau (API-07, chưa làm)
+## 3. Endpoint cần thêm ở đợt sau (API-07; đã làm phần lớn, xem mục 6)
 
 | Method | Path | Ghi chú |
 |---|---|---|
@@ -116,3 +116,61 @@ Phụ thuộc: `deps.require_role(operator)`; dùng `make_client(settings)`; `AI
 - `mypy app`: sạch (110 file).
 - `pytest tests/unit/ai tests/unit/test_no_ground_truth_leak.py`: 143 đạt, khoảng 1 phút (dựng DB demo khoảng 44 giây).
 - Prompt và code trong `app/ai` không nhắc tới thư mục đáp án.
+
+---
+
+## 6. AI ra API (API-07 phần AI, AI-01, AI-07 sàn, AI-10)
+
+Code: `backend/app/api/ai.py` (router `/api/v1/ai`), sửa trong `app/ai/` (client, agent, investigate, grounding, prompt). Test: `tests/api/test_ai_api.py` (10), `tests/unit/ai/test_openai_client.py` (5), `tests/unit/ai/test_e2e_ai_demo.py::test_demo_recordings_record_and_replay`. Không test nào gọi mạng.
+
+### Endpoint
+
+| Method | Path | Vai trò | Ghi chú |
+|---|---|---|---|
+| POST | `/ai/chat` | operator | body `{session_id?, flow, message, context{campaign_id?, sku?, product_id?, scenario_id?, alert_id?, screen?}, allow_drafts?}`. Mặc định trả JSON một lần (`Envelope[ChatTurn]`). `Accept: text/event-stream` hoặc `?stream=true` → SSE `session → tool_call/tool_result/rewrite… → answer → done` (08 §3.12; lỗi giữa chừng → event `error`) |
+| POST | `/ai/investigate` | operator | `{sku?, product_id?, question?, alert_id?, window_hours}` → checklist 6 bước + tóm tắt |
+| GET | `/ai/sessions/{id}` | viewer (operator chỉ xem phiên của mình) | các lượt (câu hỏi + `ChatTurn`), `ai_sessions`, `ai_tool_calls`, nháp |
+| GET | `/ai/drafts?session_id=&status=` | operator | nháp AI chờ xác nhận |
+| POST | `/ai/drafts/{id}/confirm` · `/reject` | operator (người tạo) | xem Q14 |
+| GET | `/ai/status` | viewer | bật/tắt, mode, `has_key` (không bao giờ trả key), model, số bản ghi |
+
+`ChatTurn`: `text` (còn `[[src:id]]`), `sources[]` (chip: id, kind, label, data_as_of, tool, mentions), `grounding` (`ok, checked, passed, badge, rewrite_count, violations, numbers[]`), `tool_calls[]`, `drafts[]`, `outcome`, `policy_violations`, `untrusted_flags`, `replayed`, `replay_match`, `label`, `model`, `usage`, `ai_mode`, `investigation` (checklist khi `flow=investigate`). `meta.sources` = cùng chip ở dạng `SourceRef`.
+
+### Quyết định
+
+- **Q11. Lỗi rõ ràng.** `AI_ENABLED=false` → 503 `AI_UNAVAILABLE` "AI đang tắt". `AI_MODE=live|record` không có key → 503, message "Chưa có OPENAI_API_KEY (đặt trong biến môi trường hoặc backend/.env), hoặc chạy AI_MODE=replay…". Lượt kết thúc `offline` (OpenAI lỗi, replay không có bản ghi) → 503 như 08 §1 (details có `session_id`). SSE kiểm client trước khi mở luồng nên vẫn trả JSON 503. Riêng **`investigate` không bao giờ 503**: checklist chạy không cần LLM, tóm tắt viết bằng `summarize_payload` (`ChecklistSummaryClient`, `model="checklist"`, nhãn "Tóm tắt tự động từ checklist (không dùng AI)"); cũng dùng khi LLM trả `offline`/`gave_up` (`investigate(..., fallback_summary=True)`).
+- **Q12. Model mặc định** (khi `OPENAI_MODEL_*` trống, kiểm 30/10/2026): `reasoning = gpt-5`, `fast = gpt-5-mini` (`client.DEFAULT_MODELS`); embed không có mặc định. Đổi bằng `OPENAI_MODEL_REASONING / OPENAI_MODEL_FAST` trong `.env`. Model GPT-5/o-series: không gửi `temperature`, gửi `reasoning.effort` (`low` cho reasoning, `minimal` cho fast), `max_output_tokens` +4.000 cho token suy luận. Chưa có bảng giá → `cost_estimate_usd` vẫn NULL.
+- **Q13. OpenAIClient.** Responses API, `store=false` (OpenAI không lưu), `include=["reasoning.encrypted_content"]` để trả lại reasoning item giữa các bước mà không cần lưu phía server. Lỗi 400 nhắc tới `temperature/reasoning/include` → bỏ tham số đó và thử lại một lần; 401 → "OPENAI_API_KEY không hợp lệ". Key chỉ đọc từ `Settings` (env / `backend/.env`), không log. **PII:** câu hỏi người dùng (và tin `developer`) được che sđt/email (`ingest.pii.mask_contacts`) ngay đầu `run_turn`, nên log, bản ghi và payload đều sạch; kết quả công cụ vốn không có cột người mua và ghi chú đã che + bọc `<du_lieu_khong_tin_cay>`. Ngữ cảnh màn hình chỉ nhận mã đã kiểm regex, đưa vào system prompt (`Người dùng đang xem: …`, `PROMPT_VERSION` đổi).
+- **Q14. Nháp.** Nháp được đăng ký từ các lần gọi công cụ nháp thành công trong phiên (bộ nhớ tiến trình). Xác nhận: `decision` → `app.governance.decisions.submit` (draft → pending_approval, kiểm `input_hash`; lead vẫn phải duyệt), từ chối → `cancel`; `parameter` → `confirm_suggestion` (thành `ai_suggested_confirmed`, kiểm `editable_by`); ghép cột / ghép SKU / bàn giao → đổi trạng thái `confirmed|rejected` và trả payload cho màn Nhập dữ liệu / Nhật ký (chưa tự áp mapping, chưa lưu `handoff_note`). Đã xác nhận/từ chối rồi → 409. Cảnh báo `ai_policy` ghi qua `app.governance.alerts.create_alert` (dedupe theo phiên). Cả hai có nhánh dự phòng khi module quản trị vắng.
+- **Q15. Phiên.** Phiên do server tạo; `session_id` lạ → 404 (phiên mất khi khởi động lại), phiên của người khác → 403. Cache câu trả lời (`AI_DEMO_CACHE`) chỉ bật ở `AI_MODE=live`.
+- **Q16. Replay chịu được đồng hồ dữ liệu chạy.** Khóa chính xác (Q6) hầu như không trùng lúc demo vì `as_of` thay đổi, nên replay **lùi về bản ghi mới nhất cùng luồng + cùng câu hỏi chuẩn hóa** (`replay_match = exact | question`). Công cụ vẫn chạy thật và grounding kiểm lại mọi số: dữ liệu khác bản ghi thì lượt thành `gave_up`, không bao giờ nói số sai. Mã chip trong bản ghi được ánh xạ sang nguồn của lần chạy mới theo (công cụ, thứ tự gọi) (`remap_sources`, cần vì `scenario_id` của kịch bản giả định đổi mỗi lần), và grounding bỏ chip trỏ tới nguồn không có trong lượt. Bản ghi bỏ `encrypted_content`.
+- **Q17. SSE** chạy lượt trong một thread riêng với cursor riêng (`db.reader()`), đẩy sự kiện qua hàng đợi; `Agent(on_event=…)` phát `tool_call`, `tool_result`, `rewrite`.
+
+### Bản ghi demo offline (AI-10)
+
+`backend/eval/ai_recordings/` có sẵn 3 bản ghi, tạo bằng FakeClient theo kịch bản cố định trên DB demo dựng tạm (công cụ thật, grounding đạt): 
+
+| Luồng (`flow`) | Câu hỏi (gõ đúng câu này) | Mốc dữ liệu | Kết quả |
+|---|---|---|---|
+| `whatif` | Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao? | 01:00 ngày 11.11, mục tiêu profit CD002 | giảm ngân sách 30%: 81% vs khung giờ 57%, 8/8 số |
+| `explain` | Vì sao nồi chiên chỉ chạy khung giờ? | 01:00 | 3 lý do + điều làm đổi kết luận, 9/9 số |
+| `investigate` | Vì sao áo giữ nhiệt bán chậm? | 14:00 | AOGIUNHIET-M hết hàng, 10/10 số |
+
+Tạo lại bản ghi FakeClient: `cd backend && AI_WRITE_RECORDINGS=1 uv run pytest tests/unit/ai/test_e2e_ai_demo.py -k recordings` (mặc định test ghi vào thư mục tạm).
+
+Ghi lại bằng key thật: đặt `OPENAI_API_KEY=…` (và tùy chọn `OPENAI_MODEL_*`) trong `backend/.env`, `AI_MODE=record`, chạy server ở đúng mốc dữ liệu demo, hỏi 3 câu trên qua UI hoặc `POST /api/v1/ai/chat` với đúng `flow`. Mỗi lượt trả lời đạt sẽ ghi `eval/ai_recordings/<flow>/<key>.json` (bản ghi mới nhất thắng khi replay). Xóa bản ghi FakeClient cũ nếu muốn chỉ dùng bản thật. Khi demo: `AI_MODE=replay` (không cần key, không cần mạng).
+
+### Kết quả
+
+- Không có `OPENAI_API_KEY` trong `backend/.env` hay môi trường lúc làm, nên **chưa chạy thật** với OpenAI; phần gửi request được test với SDK bị thay hàm `responses.create`.
+- `uv run python tasks.py check`: ruff + format + mypy (132 file) sạch; pytest 675 đạt, 1 bỏ qua, 3 e2e bỏ chọn (chạy riêng `pytest tests/unit/ai/test_e2e_ai_demo.py`: 5 đạt).
+- Còn lại: `/alerts/{id}/investigate` (router của nhóm quản trị) có thể gọi thẳng `flows.investigate.investigate(..., alert_id=, fallback_summary=True)`; `/ai/handoff` và `/ai/whatif/parse` chưa làm (dùng `/ai/chat` với `flow=handoff|whatif`); nháp ghép cột chưa tự áp vào `POST /ingest/batches/{id}/mapping`.
+
+### Nối công cụ nháp vào lớp quản trị (sau M4-quan-tri)
+
+- `draft_decision` gọi `governance.decisions.create_decision(conn, Actor(user, role, via="ai", request_id=session_id), …)`: snapshot mục tiêu/tham số/model, `input_hash`, `audit_log` (`decision.create`, `via=ai`) do service ghi. Lỗi vẫn là `NotFound` (kịch bản không lưu, giữ lời dặn "dùng ghi chú cho lead") / `ValidationFailed` / `ConstraintViolation`.
+- `request_approval` gọi `governance.decisions.submit`: không phải người tạo → `FORBIDDEN` (trước là STATE_CONFLICT), issue chặn → 422 `BLOCKING_DATA_ISSUE`, dữ liệu đổi → 409 `STALE_INPUT`, sai trạng thái → `STATE_CONFLICT`. Mã lỗi đi thẳng vào `ToolResult.error` cho LLM.
+- Bàn giao ca: `POST /ai/drafts/{id}/confirm` với body `{note?}` lưu `decisions` `kind='handoff_note'` qua `create_decision` (mặc định nội dung = nháp dựng thành văn bản); `DraftOut.saved_decision_id` trả id.
+- `investigate(..., alert_id=)` lưu qua `governance.alerts.set_investigation` (thêm `label`, `session_id`).
+- Mọi audit của lớp AI và router `/ai` dùng `governance.audit.write_audit` (AI: `via=ai`, request = phiên AI; nút trên UI: `via=ui`).
+- `POST /alerts/{id}/investigate` (quyền `alert.investigate` = operator) thêm vào `app/api/alerts.py`, gọi `app.api.ai.investigate_alert`: SKU của cảnh báo (hoặc `group_key` = sản phẩm), checklist + tóm tắt (LLM nếu có, không thì tự động), kết quả lưu vào cảnh báo. Trả 200 đồng bộ (08 ghi 202 + SSE `alert.investigated`: chưa làm).

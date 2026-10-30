@@ -14,8 +14,6 @@ set ``allow_drafts`` (07 §7: data content can never trigger a write).
 
 from __future__ import annotations
 
-import contextlib
-import json
 import threading
 from datetime import timedelta
 from typing import Any
@@ -32,10 +30,13 @@ from app.ai.tools.schemas import (
     SuggestParameterArgs,
 )
 from app.api.common import parse_json
-from app.core.errors import ConstraintViolation, NotFound, StateConflict, ValidationFailed
+from app.core.errors import NotFound, ValidationFailed
 from app.core.ids import new_id
 from app.core.timeutil import utcnow
 from app.economics.parameters import set_parameter
+from app.governance import decisions as gov
+from app.governance.audit import write_audit
+from app.governance.roles import Actor
 from app.simulator.schemas import ActionSpec
 from app.warehouse.repo import fetch_all, fetch_one
 
@@ -64,25 +65,21 @@ def _store(kind: str, ctx: ToolContext, payload: dict[str, Any]) -> str:
     return did
 
 
+def actor_of(ctx: ToolContext) -> Actor:
+    """Governance actor for an AI tool call: the user, ``via='ai'``, request = AI session."""
+    return Actor(id=ctx.user_id, role=ctx.role, via="ai", request_id=ctx.session_id)  # type: ignore[arg-type]
+
+
 def _audit(ctx: ToolContext, action: str, target_kind: str, target_id: str, after: Any) -> None:
-    with contextlib.suppress(Exception):  # audit must not break the draft
-        ctx.conn.execute(
-            'INSERT INTO audit_log (id, "at", shop_id, actor, actor_role, via, action,'
-            " target_kind, target_id, before, after, request_id) VALUES (?, ?, ?, ?, ?, 'ai',"
-            " ?, ?, ?, NULL, ?, ?)",
-            [
-                new_id("aud"),
-                utcnow(),
-                ctx.settings.shop_id,
-                ctx.user_id,
-                ctx.role,
-                action,
-                target_kind,
-                target_id,
-                json.dumps(after, ensure_ascii=False, default=str),
-                ctx.session_id,
-            ],
-        )
+    write_audit(
+        ctx.conn,
+        actor_of(ctx),
+        action,
+        target_kind,
+        target_id,
+        after=after,
+        shop_id=ctx.settings.shop_id,
+    )
 
 
 @tool(
@@ -93,89 +90,44 @@ def _audit(ctx: ToolContext, action: str, target_kind: str, target_id: str, afte
     kind="draft",
 )
 def draft_decision(args: DraftDecisionArgs, ctx: ToolContext) -> ToolData:
+    """``governance.decisions.create_decision`` (snapshot + audit, ``created_via='ai'``).
+    Errors stay ``NotFound`` / ``ValidationFailed`` / ``ConstraintViolation``."""
     require_campaign(ctx.conn, args.campaign_id)
-    scn = fetch_one(
-        ctx.conn,
-        "SELECT scenario_id, campaign_id, overrides, inputs_ref, input_hash FROM scenarios"
-        " WHERE scenario_id = ?",
-        [args.scenario_id],
-    )
-    if scn is None:
-        raise NotFound(
-            "Không có kịch bản này trong hệ thống (kịch bản giả định không lưu được thành quyết"
-            " định; hãy dùng ghi chú cho lead).",
-            scenario_id=args.scenario_id,
-        )
-    if scn["campaign_id"] != args.campaign_id:
-        raise ValidationFailed("Kịch bản không thuộc chiến dịch này.")
-    overrides = parse_json(scn["overrides"]) or {}
-    if overrides:
-        raise ValidationFailed(
-            "Kịch bản có giả định nên không lưu thành quyết định; dùng 'Ghi chú cho lead'."
-        )
     windows = [tuple(w) for w in args.action.windows_local] if args.action.windows_local else None
     try:
         action = ActionSpec(kind=args.action.kind, pct=args.action.pct, windows_local=windows)
     except ValueError as e:
         raise ValidationFailed(f"Hành động không hợp lệ: {e}") from e
-    results = fetch_all(
-        ctx.conn,
-        "SELECT action, feasible, violations FROM scenario_results WHERE scenario_id = ?",
-        [args.scenario_id],
-    )
-    match = None
-    for r in results:
-        a = ActionSpec.model_validate(parse_json(r["action"]))
-        if a.key == action.key:
-            match = r
-    if match is None:
-        raise ValidationFailed(f"Hành động {action.key} không có trong kịch bản.")
-    if not match["feasible"]:
-        raise ConstraintViolation(
-            f"Hành động {action.label_vi()} vi phạm ràng buộc: {', '.join(match['violations'])}.",
-            violations=list(match["violations"] or []),
+    if (
+        ctx.conn.execute(
+            "SELECT 1 FROM scenarios WHERE scenario_id = ?", [args.scenario_id]
+        ).fetchone()
+        is None
+    ):
+        raise NotFound(
+            "Không có kịch bản này trong hệ thống (kịch bản giả định không lưu được thành quyết"
+            " định; hãy dùng ghi chú cho lead).",
+            scenario_id=args.scenario_id,
         )
-    rec = fetch_one(
+    d = gov.create_decision(
         ctx.conn,
-        "SELECT recommendation_id, best_action FROM recommendations WHERE scenario_id = ?",
-        [args.scenario_id],
+        actor_of(ctx),
+        campaign_id=args.campaign_id,
+        scenario_id=args.scenario_id,
+        action=action,
+        rationale=args.rationale[:2000],
+        shop_id=ctx.settings.shop_id,
     )
-    best = parse_json(rec["best_action"]) if rec else None
-    best_key = ActionSpec.model_validate(best).key if best else None
-    ref = parse_json(scn["inputs_ref"]) or {}
-    did = new_id("dec")
-    now = utcnow()
-    ctx.conn.execute(
-        "INSERT INTO decisions (id, kind, target_kind, target_id, action, state, rationale,"
-        " override_of_recommendation, recommendation_id, recommended_action, scenario_id,"
-        " data_as_of, input_hash, created_by, created_via, created_at) VALUES (?, 'ad_action',"
-        " 'campaign', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, 'ai', ?)",
-        [
-            did,
-            args.campaign_id,
-            json.dumps(action.model_dump(mode="json")),
-            args.rationale[:2000],
-            best_key is not None and best_key != action.key,
-            rec["recommendation_id"] if rec else None,
-            json.dumps(best) if best else None,
-            args.scenario_id,
-            json.dumps({"data_as_of": ref.get("data_as_of")}),
-            scn["input_hash"],
-            ctx.user_id,
-            now,
-        ],
-    )
-    _audit(ctx, "decision.draft", "campaign", args.campaign_id, {"decision_id": did})
     return ToolData(
         data={
-            "decision_id": did,
-            "state": "draft",
-            "action": action.model_dump(mode="json"),
-            "action_label": action.label_vi(),
-            "override_of_recommendation": best_key is not None and best_key != action.key,
+            "decision_id": d.id,
+            "state": d.state,
+            "action": d.action,
+            "action_label": d.action_label or action.label_vi(),
+            "override_of_recommendation": bool(d.override_of_recommendation),
             "message": "Đã tạo bản nháp. Người dùng cần xem và bấm Gửi duyệt.",
         },
-        sources=[Source(id=did, kind="decision", label="Bản nháp quyết định")],
+        sources=[Source(id=d.id, kind="decision", label="Bản nháp quyết định")],
         requires_confirmation=True,
     )
 
@@ -187,31 +139,13 @@ def draft_decision(args: DraftDecisionArgs, ctx: ToolContext) -> ToolData:
     kind="write",
 )
 def request_approval(args: RequestApprovalArgs, ctx: ToolContext) -> ToolData:
-    row = fetch_one(
-        ctx.conn, "SELECT id, state, created_by FROM decisions WHERE id = ?", [args.decision_id]
-    )
-    if row is None:
-        raise NotFound("Không có quyết định này.", decision_id=args.decision_id)
-    if row["state"] != "draft":
-        raise StateConflict(f"Quyết định đang ở trạng thái {row['state']}, không gửi duyệt được.")
-    if row["created_by"] != ctx.user_id:
-        raise StateConflict("Chỉ người tạo bản nháp mới gửi duyệt được.")
-    blocking = ctx.conn.execute(
-        "SELECT count(*) FROM data_quality_issues WHERE status = 'open' AND severity = 'error'"
-        " AND entity_id IN (SELECT sku_id FROM campaign_skus WHERE campaign_id = (SELECT"
-        " target_id FROM decisions WHERE id = ?))",
-        [args.decision_id],
-    ).fetchone()
-    if blocking and int(blocking[0]) > 0:
-        raise StateConflict("Còn vấn đề dữ liệu chặn (blocking), chưa gửi duyệt được.")
-    ctx.conn.execute(
-        "UPDATE decisions SET state = 'pending_approval', submitted_at = ? WHERE id = ?",
-        [utcnow(), args.decision_id],
-    )
-    _audit(ctx, "decision.submit", "decision", args.decision_id, {"state": "pending_approval"})
+    """``governance.decisions.submit``: draft → pending_approval. Not the creator → 403
+    ``FORBIDDEN``; blocking data issue → 422; inputs changed since the scenario → 409
+    ``STALE_INPUT``; wrong state → 409 ``STATE_CONFLICT`` (all reported to the LLM)."""
+    d = gov.submit(ctx.conn, args.decision_id, actor_of(ctx))
     return ToolData(
-        data={"decision_id": args.decision_id, "state": "pending_approval"},
-        sources=[Source(id=args.decision_id, kind="decision", label="Quyết định chờ duyệt")],
+        data={"decision_id": d.id, "state": d.state},
+        sources=[Source(id=d.id, kind="decision", label="Quyết định chờ duyệt")],
         requires_confirmation=True,
     )
 
@@ -356,3 +290,30 @@ def draft_shift_handoff(args: HandoffArgs, ctx: ToolContext) -> ToolData:
         sources=[Source(id=did, kind="draft", label="Nháp ghi chú bàn giao", as_of=iso(end))],
         requires_confirmation=True,
     )
+
+
+def handoff_text(payload: dict[str, Any]) -> str:
+    """Plain-text note from a ``draft_shift_handoff`` payload (what is saved by default)."""
+    lines = [f"Bàn giao ca {payload.get('from')} → {payload.get('to')}"]
+    for title, key in (
+        ("Quyết định đã duyệt", "approved"),
+        ("Việc chờ duyệt", "pending"),
+        ("Cảnh báo còn mở", "open_alerts"),
+    ):
+        items = payload.get(key) or []
+        lines.append(f"{title}: {len(items)}")
+        for it in items[:20]:
+            label = it.get("title") or it.get("target_id") or ""
+            lines.append(f"- {it.get('id')} {label}".rstrip())
+    return "\n".join(lines)
+
+
+def save_handoff(
+    conn: Any, actor: Actor, draft_id: str, note: str | None = None, shop_id: str = "shop-demo"
+) -> gov.Decision:
+    """A person saves the handoff draft: ``decisions`` row ``kind='handoff_note'`` (07 §4.5)."""
+    d = DRAFTS.get(draft_id)
+    if d is None or d["kind"] != "handoff":
+        raise NotFound("Không có nháp bàn giao này.", draft_id=draft_id)
+    text = note.strip() if note and note.strip() else handoff_text(d["payload"])
+    return gov.create_decision(conn, actor, kind="handoff_note", rationale=text, shop_id=shop_id)
