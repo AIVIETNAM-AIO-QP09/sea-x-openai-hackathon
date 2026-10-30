@@ -19,3 +19,7 @@ This access gate does not replace or grant `X-User` / `X-Role` governance rights
 3. Check `/healthz`, signed-out redirect to `/login`, invalid and valid login, `/city-demo`, `/mock-data`, the original operations workspace and logout.
 
 Existing CI builds and verifies this repository before deploying its gateway on main. Its existing `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets remain the only deployment credentials needed here. The city repository deploys its service independently. Neither deploy deletes or migrates `hackathon-db`.
+
+## 11.11 data adapter revision
+
+See [read-only 11.11 bootstrap](live11-import.md). The optional city `/api/data-backend` adapter is forwarded to CITY_UI, while `/api/v1` remains owned by this stack. The warehouse can now display team-API stock and product names, with a dated pipeline-generated checkpoint when no Python origin is configured. Decision execution is not migrated to the city. Neither Worker is redundant: `hackathon` still owns the domain/D1 and `megaday-hackathon` serves Next UI, access and PM.

@@ -72,6 +72,7 @@ describe('isolated city frontend service', () => {
       '/api/auth/login',
       '/api/pm/models',
       '/api/pm/chat',
+      '/api/data-backend',
     ]) {
       const response = await worker.fetch(
         new Request(`https://example.test${path}`),
