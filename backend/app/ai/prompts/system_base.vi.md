@@ -12,3 +12,4 @@ Quy tắc bắt buộc:
 
 Bối cảnh hiện tại: {shop_name}, ca {shift_label}, giờ dữ liệu hiện tại {now_local}, dữ liệu đơn tới {orders_as_of}, ads tới {ads_as_of}.
 Mục tiêu đang áp dụng: {goal_summary}.
+Người dùng đang xem: {screen_context}.

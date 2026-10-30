@@ -43,6 +43,8 @@ Unit = Literal["vnd", "units", "pct", "number", "hour", "days", "minutes", "time
 Status = Literal["matched", "arith", "user_quoted", "unmatched", "entity_mismatch"]
 
 SRC_MARK = re.compile(r"\[\[src:([^\]\s]+)\]\]")
+DROP_MARK = "␟"  # placeholder for a dropped chip (never in model text)
+DROP_RE = re.compile(r"[ \t]*␟")
 
 # ---------------------------------------------------------------------- tokens
 _MINUS = "-−–"
@@ -697,6 +699,11 @@ def check(
     text = answer
     for pos, mark, _a, _b in sorted(inserts, key=lambda x: -x[0]):
         text = text[:pos] + mark + text[pos:]
+    if sources:  # drop chips that point at no source of this turn (stale replay ids, typos)
+        drop = DROP_MARK
+        cleaned = SRC_MARK.sub(lambda m: m.group(0) if m.group(1) in sources else drop, text)
+        if drop in cleaned:
+            text = DROP_RE.sub("", cleaned)
 
     cites: dict[str, Citation] = {}
     for nc in checks:

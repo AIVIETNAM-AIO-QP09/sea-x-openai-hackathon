@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Literal
@@ -41,6 +41,7 @@ from app.ai.client import (
     model_for,
     output_item,
     recording_key,
+    scrub_user_text,
     user_item,
 )
 from app.ai.flows import Flow, get_flow
@@ -94,6 +95,7 @@ class TurnResult(BaseModel):
     replayed: bool = False
     cached: bool = False
     label: str | None = None
+    replay_match: str | None = None  # exact | question (AI_MODE=replay)
     model: str | None = None
     usage: dict[str, int] = Field(default_factory=dict)
     rewrite_count: int = 0
@@ -116,6 +118,7 @@ class SessionState:
     usage: Usage = field(default_factory=Usage)
     turns: int = 0
     started_at: Any = field(default_factory=utcnow)
+    log: list[dict[str, Any]] = field(default_factory=list)  # one entry per turn (API view)
 
 
 _SESSIONS: dict[str, SessionState] = {}
@@ -164,8 +167,11 @@ class Agent:
         max_rewrites: int = MAX_REWRITES,
         context: dict[str, Any] | None = None,
         model: str | None = None,
+        on_event: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> None:
         self.client = client
+        self.on_event = on_event
+        self._question: str | None = None
         self.conn = conn
         self.settings = settings or get_settings()
         self.flow: Flow = get_flow(flow)
@@ -215,10 +221,19 @@ class Agent:
             **kw,
         )
 
+    def _emit(self, kind: str, data: dict[str, Any]) -> None:
+        if self.on_event is not None:
+            try:
+                self.on_event(kind, data)
+            except Exception:  # a dropped SSE client must not break the turn
+                log.warning("ai_event_failed", kind=kind)
+
     # ------------------------------------------------------------------ turn
     def run_turn(self, question: str, *, prefetched: Sequence[ToolResult] = ()) -> TurnResult:
         st = self.session
         st.turns += 1
+        question = scrub_user_text(question)  # no contacts to the LLM, logs or recordings
+        self._question = question
         if self.role not in ("operator", "lead"):
             return self._finish(
                 self._result("refused", "Vai trò Xem không dùng được trợ lý AI."), Usage()
@@ -289,6 +304,7 @@ class Agent:
                 tools=tool_specs,
                 temperature=self.flow.temperature,
                 flow=self.flow.name,
+                task=self.flow.task,
             )
             try:
                 resp: LlmResponse = self.client.create(req)
@@ -306,6 +322,7 @@ class Agent:
                 else:
                     items.extend(call_item(c) for c in resp.tool_calls)
                 for c in resp.tool_calls:
+                    self._emit("tool_call", {"tool": c.name, "args": _args(c.arguments)})
                     if c.name in allowed:
                         res = execute(c.name, c.arguments, ctx, call_id=c.id)
                     else:  # the LLM only sees the flow's tools; refuse anything else
@@ -317,6 +334,15 @@ class Agent:
                             message=f"Công cụ '{c.name}' không có trong luồng này.",
                         )
                         ctx.results.append(res)
+                    self._emit(
+                        "tool_result",
+                        {
+                            "tool": res.tool,
+                            "ok": res.ok,
+                            "error": res.error,
+                            "source": res.sources[0].model_dump() if res.sources else None,
+                        },
+                    )
                     results.append(res)
                     items.append(output_item(c.id, res.to_llm()))
                 continue
@@ -345,6 +371,15 @@ class Agent:
                 final = self._result("gave_up", text, grounding=report, model=model)
                 break
             rewrites += 1
+            self._emit(
+                "rewrite",
+                {
+                    "n": rewrites,
+                    "grounding_ok": report.ok,
+                    "policy_ok": pol.ok,
+                    "violations": len(report.violations),
+                },
+            )
             items.append(assistant_item(draft))
             msg = gr.rewrite_instruction(report) if not report.ok else ""
             if not pol.ok:
@@ -374,6 +409,7 @@ class Agent:
         final.untrusted_flags = sum(guard.flagged_count(r.data) for r in results)
         final.replayed = replayed
         final.label = REPLAY_LABEL if replayed else None
+        final.replay_match = getattr(self.client, "last_match", None) if replayed else None
         final.rewrite_count = rewrites
         if final.grounding is not None:
             final.grounding.rewrite_count = rewrites
@@ -392,6 +428,15 @@ class Agent:
             "output_tokens": usage.output_tokens,
             "session_total": st.usage.total,
         }
+        with _SESSIONS_LOCK:
+            st.log.append(
+                {
+                    "turn": res.turn,
+                    "at": utcnow(),
+                    "question": self._question,
+                    "result": res,
+                }
+            )
         if self.log_db:
             try:
                 upsert_rows(
@@ -430,23 +475,42 @@ class Agent:
         return res
 
     def _policy_alert(self, violations: list[str], question: str) -> None:
+        """One ``alerts`` row of kind ``ai_policy`` (via ``app.governance.alerts`` when
+        present, deduped per session)."""
         if not self.log_db:
             return
+        sid = self.session.session_id
+        title = "AI đề xuất hành động không có căn cứ mô phỏng (đã chặn)"
+        detail = {"violations": violations[:5], "question": question[:300]}
         try:
-            self.conn.execute(
+            try:
+                from app.governance.alerts import create_alert
+            except ImportError:  # pragma: no cover - governance not merged yet
+                create_alert = None  # type: ignore[assignment]
+            if create_alert is not None:
+                create_alert(
+                    self.conn,
+                    "ai_policy",
+                    ("ai_session", sid),
+                    "medium",
+                    title,
+                    detail,
+                    f"ai_policy:{sid}",
+                    group_key=f"ai_policy:{sid}",
+                    shop_id=self.settings.shop_id,
+                )
+                return
+            self.conn.execute(  # pragma: no cover
                 "INSERT INTO alerts (id, shop_id, kind, severity, target_kind, target_id,"
                 " group_key, title, detail, status, raised_at) VALUES (?, ?, 'ai_policy',"
                 " 'medium', 'ai_session', ?, ?, ?, ?, 'open', ?)",
                 [
                     new_id("alr"),
                     self.settings.shop_id,
-                    self.session.session_id,
-                    f"ai_policy:{self.session.session_id}",
-                    "AI đề xuất hành động không có căn cứ mô phỏng (đã chặn)",
-                    json.dumps(
-                        {"violations": violations[:5], "question": question[:300]},
-                        ensure_ascii=False,
-                    ),
+                    sid,
+                    f"ai_policy:{sid}",
+                    title,
+                    json.dumps(detail, ensure_ascii=False),
                     utcnow(),
                 ],
             )
@@ -458,6 +522,14 @@ def _call(call_id: str, name: str, arguments: str) -> Any:
     from app.ai.client import ToolCall
 
     return ToolCall(call_id, name, arguments)
+
+
+def _args(arguments: str) -> dict[str, Any]:
+    try:
+        v = json.loads(arguments or "{}")
+    except ValueError:
+        return {"_raw": arguments[:200]}
+    return v if isinstance(v, dict) else {"_value": v}
 
 
 def _as_output(r: ToolResult) -> gr.ToolOutput:

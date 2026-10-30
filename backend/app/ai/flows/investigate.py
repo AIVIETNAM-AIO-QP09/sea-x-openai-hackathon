@@ -26,10 +26,12 @@ from pydantic import BaseModel, Field
 from unidecode import unidecode
 
 from app.ai.agent import Agent, TurnResult
+from app.ai.client import LlmClient, LlmRequest, LlmResponse, tool_outputs
 from app.ai.tools import Source, ToolContext, ToolResult, execute
 from app.ai.tools._util import iso, now_data
 from app.core.ids import new_id
 from app.core.timeutil import local_date, local_day_bounds_utc, to_local
+from app.governance.alerts import set_investigation
 
 Verdict = Literal["ok", "nghi_van", "nguyen_nhan", "chua_kiem_duoc"]
 CHECKLIST_TOOL = "investigation_checklist"
@@ -488,6 +490,22 @@ def summarize_payload(payload: dict[str, Any], source_id: str) -> str:
     return "\n".join(lines)
 
 
+class ChecklistSummaryClient(LlmClient):
+    """No-LLM "model" for the floor of AI-07: answers with :func:`summarize_payload` of the
+    checklist (used when the AI is off / offline, and by scripted tests)."""
+
+    name = "checklist"
+
+    def create(self, req: LlmRequest) -> LlmResponse:
+        chk = tool_outputs(req).get(CHECKLIST_TOOL)
+        if chk is None:
+            return LlmResponse(text="Chưa có kết quả checklist.", model=self.name)
+        return LlmResponse(text=summarize_payload(chk, chk["source"]["id"]), model=self.name)
+
+
+AUTO_SUMMARY_LABEL = "Tóm tắt tự động từ checklist (không dùng AI)"
+
+
 def investigate(
     agent: Agent,
     question: str,
@@ -496,8 +514,13 @@ def investigate(
     sku: str | None = None,
     window_hours: int = 3,
     alert_id: str | None = None,
+    fallback_summary: bool = False,
 ) -> tuple[TurnResult, InvestigationReport]:
-    """Checklist (real tools) → LLM summary checked by grounding; saved on the alert."""
+    """Checklist (real tools) → LLM summary checked by grounding; saved on the alert.
+
+    ``fallback_summary``: when the LLM turn ends ``offline`` / ``gave_up`` (no key, no
+    recording, numbers not verified), the summary is written from the checklist without
+    an LLM (:class:`ChecklistSummaryClient`) and labelled :data:`AUTO_SUMMARY_LABEL`."""
     ctx = ToolContext(
         conn=agent.conn,
         user_id=agent.user_id,
@@ -513,20 +536,31 @@ def investigate(
     )
     chk = checklist_result(report, ctx)
     turn = agent.run_turn(question, prefetched=[*results, chk])
+    if fallback_summary and turn.outcome in ("offline", "gave_up"):
+        auto = Agent(
+            ChecklistSummaryClient(),
+            agent.conn,
+            settings=agent.settings,
+            flow="investigate",
+            user_id=agent.user_id,
+            role=agent.role,
+            session_id=agent.session.session_id,
+            log_db=agent.log_db,
+            model=ChecklistSummaryClient.name,
+        )
+        turn = auto.run_turn(question, prefetched=[*results, chk])
+        turn.label = AUTO_SUMMARY_LABEL
     if alert_id is not None:
-        agent.conn.execute(
-            "UPDATE alerts SET investigation = ? WHERE id = ?",
-            [
-                json.dumps(
-                    {
-                        "checklist": json.loads(report.model_dump_json()),
-                        "summary": turn.text,
-                        "citations": [c.model_dump() for c in turn.citations],
-                        "grounding_ok": turn.grounding_ok,
-                    },
-                    ensure_ascii=False,
-                ),
-                alert_id,
-            ],
+        set_investigation(
+            agent.conn,
+            alert_id,
+            {
+                "checklist": json.loads(report.model_dump_json()),
+                "summary": turn.text,
+                "citations": [c.model_dump() for c in turn.citations],
+                "grounding_ok": turn.grounding_ok,
+                "label": turn.label,
+                "session_id": turn.session_id,
+            },
         )
     return turn, report

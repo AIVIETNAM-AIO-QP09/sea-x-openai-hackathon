@@ -147,16 +147,15 @@ def compute_state(
     result_as_of: datetime | None,
     current_as_of: datetime | None,
     stored_state: str | None = None,
+    stored_as_of: datetime | None = None,
 ) -> ComputeState | None:
-    """06 §4: a stored ``queued|computing|failed`` wins; otherwise ``stale`` when newer
-    data arrived after the result was computed, else ``fresh``."""
-    if stored_state in ("queued", "computing", "failed"):
-        return stored_state  # type: ignore[return-value]
-    if result_as_of is None:
-        return None
-    if current_as_of is not None and result_as_of < current_as_of:
-        return "stale"
-    return "fresh"
+    """06 §4 (ORC-04): a stored ``queued|computing|failed`` (``sku_compute_state``) wins;
+    otherwise ``stale`` when the data clock moved on by more than 30 min since the result
+    (or since the orchestrator last marked the SKU fresh), else ``fresh``. Rule in
+    :func:`app.orchestrator.state.derive_state`."""
+    from app.orchestrator.state import derive_state
+
+    return derive_state(result_as_of, current_as_of, stored_state, stored_as_of)
 
 
 # ---------------------------------------------------------------------- pagination

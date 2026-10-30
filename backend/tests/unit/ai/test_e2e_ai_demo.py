@@ -22,7 +22,7 @@ import pytest
 
 from app.ai.agent import Agent
 from app.ai.client import FakeClient, LlmRequest, LlmResponse, tool_outputs
-from app.ai.flows.investigate import CHECKLIST_TOOL, investigate, summarize_payload
+from app.ai.flows.investigate import CHECKLIST_TOOL, fmt_vnd, investigate, summarize_payload
 from app.ai.flows.whatif import parse_intent, resolve_intent, run_args_json
 from app.ai.tools import ToolContext
 from app.ai.tools.schemas import RunScenarioArgs
@@ -293,3 +293,190 @@ def test_draft_decision_only_on_request(
     rows = conn_0100.execute("SELECT state, created_via, target_id FROM decisions").fetchall()
     assert rows == [("draft", "ai", "CD002")]
     assert turn.outcome == "answered" and turn.grounding_ok
+
+
+# ---------------------------------------------------------------------- demo recordings (AI-10)
+DEMO_WHATIF_Q = "Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao?"
+DEMO_INVESTIGATE_Q = "Vì sao áo giữ nhiệt bán chậm?"
+DEMO_EXPLAIN_Q = "Vì sao nồi chiên chỉ chạy khung giờ?"
+
+
+def _whatif_script() -> list[Any]:
+    def answer(req: LlmRequest) -> LlmResponse:
+        out = tool_outputs(req)
+        base, wif = out["compare_actions"], out["run_scenario"]
+        sid, rec = wif["source"]["id"], _rec(wif)
+        by = {r["key"]: r for r in wif["results"]}
+        best = by[rec["best"] and f"reduce_budget:{rec['best']['pct']:g}"]
+        sched = next(r for r in wif["results"] if r["key"].startswith("schedule_hours"))
+        return FakeClient.say(
+            f"Hiện tại đề xuất là {_rec(base)['best_label'].lower()}"
+            f" [[src:{base['source']['id']}]]."
+            f" Theo kịch bản giả định chỉ tiêu 97 cái, nên {rec['best_label'].lower()}"
+            f" [[src:{sid}]]: xác suất bán đủ {_pct(best['p_target'])} [[src:{sid}]], còn chỉ"
+            f" chạy khung giờ chỉ đạt {_pct(sched['p_target'])} [[src:{sid}]]."
+            " Đây là giả định chưa xảy ra, mức tin cậy kịch bản."
+        )
+
+    args = RunScenarioArgs(
+        campaign_id="CD002",
+        goal_override={"kind": "sell_target", "target_units": 97},  # type: ignore[arg-type]
+    )
+    return [
+        FakeClient.call("compare_actions", {"campaign_id": "CD002", "horizon_hours": None}),
+        FakeClient.call("run_scenario", run_args_json(args)),
+        answer,
+    ]
+
+
+def _explain_script() -> list[Any]:
+    def answer(req: LlmRequest) -> LlmResponse:
+        base = tool_outputs(req)["compare_actions"]
+        rec, sid = _rec(base), base["source"]["id"]
+        by = {r["key"]: r for r in base["results"]}
+        best = next(r for r in base["results"] if r["label"] == rec["best_label"])
+        cont = by.get("continue")
+        lines = [
+            f"Mô phỏng đề xuất {rec['best_label'].lower()} [[src:{sid}]].",
+            f"Khả năng cách này lời hơn cách đứng thứ hai là {_pct(rec['p_best_beats_runner_up'])}"
+            f" [[src:{sid}]].",
+        ]
+        if cont is not None:
+            lines.append(
+                f"Chạy cả ngày tốn khoảng {fmt_vnd(cont['spend']['p50'])} tiền ads [[src:{sid}]],"
+                f" còn chỉ chạy khung giờ tốn khoảng {fmt_vnd(best['spend']['p50'])} [[src:{sid}]]."
+            )
+        lines.append(
+            "Hai khung flash sale là khung đã cam kết với sàn nên vẫn phải chạy quảng cáo."
+        )
+        if rec["flip_conditions"]:
+            lines.append(f"Điều làm đổi kết luận: {rec['flip_conditions'][0]['text']}")
+        return FakeClient.say("\n".join(lines))
+
+    return [
+        FakeClient.call("compare_actions", {"campaign_id": "CD002", "horizon_hours": None}),
+        answer,
+    ]
+
+
+def _investigate_script() -> list[Any]:
+    def summary(req: LlmRequest) -> LlmResponse:
+        chk = tool_outputs(req)[CHECKLIST_TOOL]
+        return FakeClient.say(summarize_payload(chk, chk["source"]["id"]))
+
+    return [summary]
+
+
+def _no_chips(text: str) -> str:
+    import re
+
+    return re.sub(r"\[\[src:[^\]]+\]\]", "[[src]]", text)
+
+
+def test_demo_recordings_record_and_replay(
+    conn_0100: duckdb.DuckDBPyConnection,
+    conn_1400: duckdb.DuckDBPyConnection,
+    ai_settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Record the 3 demo questions (scripted FakeClient = offline stand-in for the LLM),
+    then replay them with no client at all. ``AI_WRITE_RECORDINGS=1`` writes the files to
+    ``backend/eval/ai_recordings`` (the offline demo set, M4-ai.md "AI ra API")."""
+    import os
+
+    from app.ai.client import RECORDINGS_DIR, RecordReplayClient
+
+    root = RECORDINGS_DIR if os.environ.get("AI_WRITE_RECORDINGS") == "1" else tmp_path
+    cases = [
+        ("whatif", DEMO_WHATIF_Q, conn_0100, _whatif_script),
+        ("explain", DEMO_EXPLAIN_Q, conn_0100, _explain_script),
+        ("investigate", DEMO_INVESTIGATE_Q, conn_1400, _investigate_script),
+    ]
+
+    def run(flow: str, q: str, conn: duckdb.DuckDBPyConnection, client: Any) -> Any:
+        agent = Agent(client, conn, settings=ai_settings, flow=flow)
+        if flow == "investigate":
+            return investigate(agent, q)[0]
+        return agent.run_turn(q)
+
+    recorded = {}
+    for flow, q, conn, script in cases:
+        turn = run(flow, q, conn, RecordReplayClient("record", FakeClient(script()), root=root))
+        _show(f"\nDEMO {flow}\n{turn.text}\n{turn.grounding.badge if turn.grounding else ''}")
+        assert turn.outcome == "answered" and turn.grounding_ok, (flow, turn.text)
+        recorded[flow] = turn
+        files = list((root / flow).glob("*.json"))
+        assert files and all("Khách Test" not in f.read_text(encoding="utf-8") for f in files)
+    for flow, q, conn, _script in cases:
+        rep = run(flow, q, conn, RecordReplayClient("replay", None, root=root))
+        assert rep.replayed and rep.replay_match == "exact", flow
+        assert rep.outcome == "answered" and rep.grounding_ok, (flow, rep.text)
+        # same answer; chips point at this run's sources (scenario ids change per run)
+        assert _no_chips(rep.text) == _no_chips(recorded[flow].text)
+        assert rep.text.count("[[src:") == recorded[flow].text.count("[[src:")
+    assert "giảm ngân sách 30%" in recorded["whatif"].text
+    assert "AOGIUNHIET-M hết hàng" in recorded["investigate"].text
+    assert "khung giờ" in recorded["explain"].text
+
+
+# ---------------------------------------------------------------------- governance wiring
+def test_draft_and_submit_via_governance(
+    conn_0100: duckdb.DuckDBPyConnection, ai_settings: Settings
+) -> None:
+    """``draft_decision`` → ``governance.create_decision`` (snapshots, audit via='ai');
+    ``request_approval`` → ``governance.submit`` (not the creator → 403 FORBIDDEN)."""
+    from app.ai.tools import execute
+
+    ctx = ToolContext(
+        conn=conn_0100,
+        settings=ai_settings,
+        user_id="u-ops-7",
+        session_id="ais-gov-1",
+        user_message="Lưu thành bản nháp quyết định theo đề xuất",
+    )
+    base = execute("compare_actions", {"campaign_id": "CD002", "horizon_hours": None}, ctx)
+    assert base.ok
+    best = base.data["recommendation"]["best"]
+    r = execute(
+        "draft_decision",
+        {
+            "campaign_id": "CD002",
+            "action": best,
+            "scenario_id": base.data["scenario_id"],
+            "rationale": "Theo đề xuất",
+        },
+        ctx,
+    )
+    assert r.ok and r.data["state"] == "draft", r.message
+    did = r.data["decision_id"]
+    row = conn_0100.execute(
+        "SELECT created_via, created_by, parameters_snapshot IS NOT NULL, input_hash"
+        " FROM decisions WHERE id = ?",
+        [did],
+    ).fetchone()
+    assert row is not None and row[:3] == ("ai", "u-ops-7", True) and row[3]
+    aud = conn_0100.execute(
+        "SELECT via, request_id FROM audit_log WHERE target_id = ? AND action = 'decision.create'",
+        [did],
+    ).fetchall()
+    assert aud == [("ai", "ais-gov-1")]
+    # hypothetical scenario id → NotFound (kept message for the LLM)
+    bad = execute(
+        "draft_decision",
+        {"campaign_id": "CD002", "action": best, "scenario_id": "scn-x", "rationale": "x"},
+        ctx,
+    )
+    assert bad.error == "NOT_FOUND" and "ghi chú cho lead" in (bad.message or "")
+    other = ToolContext(
+        conn=conn_0100,
+        settings=ai_settings,
+        user_id="u-ops-8",
+        user_confirmed=True,
+        allow_drafts=True,
+    )
+    assert execute("request_approval", {"decision_id": did}, other).error == "FORBIDDEN"
+    ctx.user_confirmed = True
+    ok_ = execute("request_approval", {"decision_id": did}, ctx)
+    assert ok_.ok and ok_.data["state"] == "pending_approval", ok_.message
+    again = execute("request_approval", {"decision_id": did}, ctx)
+    assert again.error == "STATE_CONFLICT"

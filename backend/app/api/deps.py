@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 import anyio.from_thread
 import duckdb
@@ -25,13 +25,16 @@ from app.core.events import Event, EventBus
 from app.core.ids import new_id
 from app.core.logging import get_logger
 from app.core.timeutil import utcnow
+from app.governance.audit import current_request_id
+from app.governance.roles import ROLE_LABEL_VI as ROLE_LABEL_VI
+from app.governance.roles import ROLE_RANK as ROLE_RANK
+from app.governance.roles import Actor, min_role
+from app.governance.roles import Role as Role
 from app.warehouse.db import Database
 
 log = get_logger(__name__)
 
-Role = Literal["viewer", "operator", "lead"]
-ROLE_RANK: dict[str, int] = {"viewer": 0, "operator": 1, "lead": 2}
-ROLE_LABEL_VI: dict[str, str] = {"viewer": "Xem", "operator": "Vận hành", "lead": "Trưởng ca"}
+# Roles + permission matrix live in app/governance/roles.py (GOV-02); re-exported here.
 
 
 class User(BaseModel):
@@ -40,6 +43,11 @@ class User(BaseModel):
 
     def at_least(self, role: Role) -> bool:
         return ROLE_RANK[self.role] >= ROLE_RANK[role]
+
+    def actor(self, request: Request | None = None, via: str = "ui") -> Actor:
+        """Governance actor for this user (``request_id`` from ``X-Request-ID``)."""
+        rid = request.headers.get("X-Request-ID") if request is not None else None
+        return Actor(id=self.id, role=self.role, via=via, request_id=rid)
 
 
 def current_user(
@@ -71,6 +79,13 @@ def require_role(minimum: Role) -> Callable[..., User]:
         return user
 
     return dep
+
+
+def require_permission(permission: str) -> Callable[..., User]:
+    """FastAPI dependency: rank check for a named permission of the matrix
+    (``app.governance.roles.PERMISSIONS``). Ownership rules (creator only / never the
+    creator) are checked by the governance service, which knows the owner."""
+    return require_role(min_role(permission))
 
 
 Viewer = Annotated[User, Depends(require_role("viewer"))]
@@ -130,7 +145,7 @@ def audit(
                 target_id,
                 None if before is None else json.dumps(before, ensure_ascii=False, default=str),
                 None if after is None else json.dumps(after, ensure_ascii=False, default=str),
-                request.headers.get("X-Request-ID"),
+                request.headers.get("X-Request-ID") or current_request_id(),
             ],
         )
     except duckdb.Error as e:  # pragma: no cover - audit must not break the action
