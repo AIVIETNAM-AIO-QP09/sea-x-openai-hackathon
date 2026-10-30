@@ -80,13 +80,15 @@ Mode `cloudflare` dùng fixture có sẵn; UI vẫn hiện "Dữ liệu mẫu". 
 FastAPI/DuckDB chưa được deploy: nó cần môi trường Python hoặc container, không
 chạy nguyên trạng trong Worker. D1 mới được tạo riêng và bind vào `DB`, hiện còn
 trống, chưa thay thế DuckDB. Static assets nằm trong bản deploy Worker mới.
+Endpoint `/healthz` kiểm tra kết nối D1 bằng truy vấn chỉ đọc; trả 503 nếu DB
+không truy cập được. Nó chỉ kiểm tra hạ tầng demo, không phải health backend.
 `npm run dev` và `npm run build` vẫn đọc cấu hình API trong `.env.local`.
 
 GitHub Actions lưu bản build đã kiểm tra thành artifact. Chỉ push vào `main`
 (hoặc chạy workflow thủ công trên `main`) mới được deploy, sau khi cổng `ci`
 thành công: backend, web và mock-data đều phải qua. Deploy dùng đúng artifact
 của commit đó, kiểm tra commit vẫn là đầu `main`, rồi kiểm HTTP `/` và
-`/settings`. PR không nhận bí mật Cloudflare và chỉ kiểm dry run.
+`/settings` cùng kết nối D1 qua `/healthz`. PR không nhận bí mật Cloudflare và chỉ kiểm dry run.
 
 Repository cần hai Actions secrets: `CLOUDFLARE_ACCOUNT_ID` và
 `CLOUDFLARE_API_TOKEN`. Token cần Workers Scripts Write, D1 Write, Account

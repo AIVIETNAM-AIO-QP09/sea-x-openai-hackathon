@@ -194,3 +194,5 @@ jobs:
           curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 https://hackathon.dangphuc.me/settings -o /tmp/hackathon-settings.html
           grep -q 'id="root"' /tmp/hackathon-home.html
           cmp /tmp/hackathon-home.html /tmp/hackathon-settings.html
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 https://hackathon.dangphuc.me/healthz -o /tmp/hackathon-health.json
+          python3 -c 'import json; health = json.load(open("/tmp/hackathon-health.json")); assert health == {"status": "ok", "db": "ok", "mode": "fixtures"}, health'
