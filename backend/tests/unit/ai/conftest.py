@@ -5,10 +5,14 @@
 * ``demo_ai_dbs`` (session, e2e) — the ``demo`` history loaded by the real pipeline, then
   the 11.11 live stream up to 00:59 (file ``0100``) and a copy advanced to 13:59
   (file ``1400``), the two moments of the pitch script (05 §10, 07 §4.3).
+  ``AI_RECORD_DB=<demo.duckdb>``: start from a copy of that DB instead (the pitch DB of
+  ``scripts/demo.mjs`` / ``app.demo_import --models``, 01:00), used to re-record the demo
+  answers on the exact state of the demo (M5-chuan-bi-demo.md).
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -52,13 +56,17 @@ def demo_ai_dbs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     require("demo")
     root = tmp_path_factory.mktemp("ai_demo")
     p1 = root / "demo_0100.duckdb"
-    conn = duckdb.connect(str(p1))
-    load_mock(conn, "demo", build_panel=False)
-    write_live_stream("demo", root / "live_stream", 0)  # orders + stock up to 00:59
-    assert ingest_live_delta(conn, root / "live_stream", build_panel=False).status == "loaded"
-    build_hourly_panel(conn)
-    write_estimates(conn, estimate_all(conn).estimates)
-    conn.close()
+    given = os.environ.get("AI_RECORD_DB")
+    if given:  # the pitch DB as built for the demo (models included), never written
+        shutil.copy(given, p1)
+    else:
+        conn = duckdb.connect(str(p1))
+        load_mock(conn, "demo", build_panel=False)
+        write_live_stream("demo", root / "live_stream", 0)  # orders + stock up to 00:59
+        assert ingest_live_delta(conn, root / "live_stream", build_panel=False).status == "loaded"
+        build_hourly_panel(conn)
+        write_estimates(conn, estimate_all(conn).estimates)
+        conn.close()
     p2 = root / "demo_1400.duckdb"
     shutil.copy(p1, p2)
     conn = duckdb.connect(str(p2))
