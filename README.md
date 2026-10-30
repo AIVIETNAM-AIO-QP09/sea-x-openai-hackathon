@@ -164,7 +164,7 @@ uv run python -m app.cli estimate-ads
 ```
 
 Bản demo Cloudflare: <https://hackathon.dangphuc.me>. Deploy dùng `cf` CLI,
-Worker `hackathon` và D1 mới `hackathon-db`; hiện frontend dùng dữ liệu mẫu,
+Worker `megaday-hackathon` và D1 `hackathon-db`; hiện frontend dùng dữ liệu mẫu,
 backend Python/DuckDB chưa deploy. Mỗi push vào `main` tự deploy sau khi mọi
 kiểm tra CI thành công. Cấu hình và lệnh ở [web/README.md](web/README.md#cloudflare).
 

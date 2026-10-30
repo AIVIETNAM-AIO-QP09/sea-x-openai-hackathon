@@ -1,3 +1,5 @@
+> Superseded by [account workspace](account-workspace.md): this repository now deploys its own city, storage and PM to `megaday-hackathon`, preserving that Worker’s credentials. The earlier gateway is retained for rollback.
+
 # City frontend and backend boundary
 
 The immersive city is maintained independently in [megadaytwin PR #16](https://github.com/AIVIETNAM-AIO-QP09/megadaytwin/pull/16). It is a separate Next.js/Three.js sample demo, deployed as Worker `megaday-hackathon`. This repository retains React/Vite, FastAPI/DuckDB, its generated API types, and the M0–M5 plan. No migration of the backend stack or schema is implied.

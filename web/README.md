@@ -75,38 +75,52 @@ Trước khi push: `npm run lint && npm run typecheck && npm test && npm run bui
 
 ## Cloudflare
 
-Website: <https://hackathon.dangphuc.me>, Worker `hackathon`, D1 `hackathon-db`.
-Quản lý và deploy bằng `cf` (đã ghim phiên bản trong devDependencies):
+Website: <https://hackathon.dangphuc.me>. This repository deploys Worker
+`megaday-hackathon`, preserving that Worker's existing OpenAI key, password hash
+and session secret. The custom domain moves directly to this Worker. The prior
+`hackathon` gateway is retained for rollback; its `hackathon-db` database is
+reused unchanged through binding `DB`.
 
 ```bash
 cd web
-npx cf auth login
+npm ci
+npm run prepare:sources
+npm run lint && npm run typecheck && npm test
 npm run build:cloudflare
 npm run deploy:cloudflare -- --dry-run
 npm run deploy:cloudflare
+npx playwright install chromium
+npm run test:smoke -- https://hackathon.dangphuc.me
 ```
 
-Mode `cloudflare` dùng fixture có sẵn; UI vẫn hiện "Dữ liệu mẫu". Backend
-FastAPI/DuckDB chưa được deploy: nó cần môi trường Python hoặc container, không
-chạy nguyên trạng trong Worker. D1 mới được tạo riêng và bind vào `DB`, hiện còn
-trống, chưa thay thế DuckDB. Static assets nằm trong bản deploy Worker mới.
-Endpoint `/healthz` kiểm tra kết nối D1 bằng truy vấn chỉ đọc; trả 503 nếu DB
-không truy cập được. Nó chỉ kiểm tra hạ tầng demo, không phải health backend.
-`npm run dev` và `npm run build` vẫn đọc cấu hình API trong `.env.local`.
+The React/Vite city, Data Studio, account storage and Milo chat run in this
+Worker. Chat history, settings, sandbox and sanitized source files persist in
+its SQLite-backed `AccountWorkspace` Durable Object. Devices reconcile saved
+changes through authenticated WebSockets. See
+[account workspace](../docs/city-demo/account-workspace.md) for contracts and
+verification. The existing `megaday_session` cookie and scrypt password hashes
+remain valid; PBKDF2 hashes are also supported for local development.
 
-GitHub Actions lưu bản build đã kiểm tra thành artifact. Chỉ push vào `main`
-(hoặc chạy workflow thủ công trên `main`) mới được deploy, sau khi cổng `ci`
-thành công: backend, web và mock-data đều phải qua. Deploy dùng đúng artifact
-của commit đó, kiểm tra commit vẫn là đầu `main`, rồi kiểm HTTP `/` và
-`/settings` cùng kết nối D1 qua `/healthz`. PR không nhận bí mật Cloudflare và chỉ kiểm dry run.
+Required Worker secrets are `ADMIN_PASSWORD_HASH`, `SESSION_SECRET` and
+`OPENAI_API_KEY`. They already belong to the existing Worker and survive ordinary
+deployments. Do not copy empty local values over production secrets. No secret
+is required to build or validate a dry run. FastAPI/DuckDB remains a separate
+service; absent `DATA_BACKEND_URL`, existing operations use clearly labeled
+fixtures and Milo does not execute campaigns or stock mutations.
 
-Repository cần hai Actions secrets: `CLOUDFLARE_ACCOUNT_ID` và
-`CLOUDFLARE_API_TOKEN`. Token cần Workers Scripts Write, D1 Write, Account
-Settings Read trên tài khoản triển khai; Workers Routes Write và Zone Read chỉ
-trên zone `dangphuc.me`. Không dùng OAuth token cá nhân ngắn hạn cho CI.
+GitHub Actions builds and stores the checked Worker artifact. Only the latest
+`main` commit deploys, after backend, web and mock-data checks pass. The production
+smoke test opens the real login in Chromium, verifies signed-out access protection
+and checks D1 via `/healthz`. Repository Actions secrets remain
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`; the token must permit Worker,
+Durable Object and custom-domain deployment in this account.
 
-Rollback: revert commit lỗi qua PR vào `main`; cùng cổng CI sẽ build và deploy
-lại. Không có migration hay thay đổi dữ liệu trong bản deploy frontend này.
+Rollback: redeploy the prior `megaday-hackathon` version
+`80d26526-0a34-4aaf-b79e-e4d1b9cdb78e`, then restore the custom domain to the
+retained `hackathon` gateway (version
+`971e0fa4-add8-45e8-b910-5bc8d481600a`). The new Durable Object namespace and
+existing D1 remain intact; do not delete either database. Revert the release PR
+before subsequent automatic deployments.
 
 ## Biến môi trường
 
