@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "id": "al-31",
+      "kind": "sales_below_forecast",
+      "severity": "high",
+      "target": { "sku": "AOGIUNHIET-M", "product": "Áo giữ nhiệt nam" },
+      "title": "Áo giữ nhiệt bán thấp hơn dự báo 3 giờ liền",
+      "impact_vnd": 1850000,
+      "raised_at": "2026-11-11T13:04:00+07:00",
+      "status": "open",
+      "group_key": "AOGIUNHIET",
+      "investigation": null
+    },
+    {
+      "id": "al-32",
+      "kind": "sales_above_forecast",
+      "severity": "high",
+      "target": { "sku": "BINHNUOC500-HONG", "product": "Bình nước giữ nhiệt 500ml" },
+      "title": "Bình nước bán gấp 6 lần dự báo, có thể hết hàng tối nay",
+      "impact_vnd": 1200000,
+      "raised_at": "2026-11-11T14:10:00+07:00",
+      "status": "open",
+      "group_key": "BINHNUOC500",
+      "investigation": null
+    },
+    {
+      "id": "al-33",
+      "kind": "stockout_risk",
+      "severity": "high",
+      "target": { "sku": "NOICHIEN2L", "product": "Nồi chiên không dầu mini 2L", "campaign_id": "CD002" },
+      "title": "Nồi chiên còn đủ bán khoảng 6,5 giờ trong khi ads vẫn chạy",
+      "impact_vnd": 900000,
+      "raised_at": "2026-11-11T15:01:00+07:00",
+      "status": "open",
+      "group_key": "CD002",
+      "investigation": null
+    }
+  ]
+}

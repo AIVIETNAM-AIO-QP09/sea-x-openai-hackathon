@@ -1,0 +1,11 @@
+{
+  "data": {
+    "now": "2026-11-11T15:03:00+07:00",
+    "sources": [
+      { "source": "orders", "as_of": "2026-11-11T14:59:00+07:00", "status": "fresh", "lag_minutes": 4, "threshold_minutes": 30 },
+      { "source": "ads", "as_of": "2026-11-11T12:59:00+07:00", "status": "fresh", "lag_minutes": 124, "threshold_minutes": 180 },
+      { "source": "inventory", "as_of": "2026-11-11T15:00:00+07:00", "status": "fresh", "lag_minutes": 3, "threshold_minutes": 60 },
+      { "source": "cost", "as_of": "2026-11-10T09:00:00+07:00", "status": "partial", "missing_skus": 17 }
+    ]
+  }
+}

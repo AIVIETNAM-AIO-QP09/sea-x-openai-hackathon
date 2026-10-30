@@ -1,0 +1,38 @@
+{
+  "data": {
+    "recommendation_id": "rec-551", "campaign_id": "CD002", "status": "recommend",
+    "best": { "kind": "schedule_hours", "windows_local": [[0, 2], [12, 14]] },
+    "runner_up": { "kind": "continue" },
+    "p_best_beats_runner_up": 0.99, "expected_gain_vnd": 4300000,
+    "zone_bar": {
+      "axis_label": "Lượng bán mỗi giờ nếu pause (sp)", "threshold": 3.1,
+      "interval": [4.2, 5.6, 7.0], "verdict": "pause_better", "alt_thresholds": []
+    },
+    "flip_conditions": [
+      { "factor": "restock_delay_days", "flip_at": -1, "text": "Nếu hàng về trong hôm nay, chạy tiếp có lợi hơn" }
+    ],
+    "confidence": "reference",
+    "reasons": [
+      "Hàng sẽ hết khoảng 13:00: ads không bán thêm được khi hết hàng",
+      "Ở giá 11.11 mỗi nồi chỉ lãi 9.280đ",
+      "Không được tắt hẳn vì đã cam kết với sàn trong khung flash sale"
+    ],
+    "inputs_ref": {
+      "forecast_ids": ["fc-8812", "fc-8813", "fc-8814"], "estimate_id": "ie-37",
+      "param_version": 12, "goal_id": "goal-cd002-1111", "data_as_of": "2026-11-11T01:00:00+07:00"
+    },
+    "scenario_id": "scn-2291",
+    "created_at": "2026-11-11T01:02:10+07:00",
+    "superseded_by": null
+  },
+  "meta": {
+    "data_as_of": "2026-11-11T01:00:00+07:00",
+    "computed_at": "2026-11-11T01:02:10+07:00",
+    "compute_state": "fresh",
+    "confidence": "reference",
+    "sources": [
+      { "id": "scn-2291", "kind": "scenario", "label": "Mô phỏng scn-2291 · 1.000 mẫu" },
+      { "id": "ie-37", "kind": "iroas", "label": "Hiệu quả thật của ads CD002" }
+    ]
+  }
+}
