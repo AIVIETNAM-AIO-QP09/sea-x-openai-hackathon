@@ -9,12 +9,14 @@ function jsonResponse(status: number, body: unknown): Response {
 
 describe('createApiClient (HTTP)', () => {
   it('sends base URL and X-User / X-Role headers', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(200, { status: 'ok', db: 'ok', ai: 'disabled' }));
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(200, { data: { status: 'ok', db: 'ok', ai: 'disabled' }, meta: {} }),
+    );
     const client = createApiClient({ baseUrl: '/api/v1', useFixtures: false, user, fetchImpl });
 
-    const health = await client.get<HealthStatus>('/health');
+    const health = await client.get<Envelope<HealthStatus>>('/health');
 
-    expect(health.status).toBe('ok');
+    expect(health.data.status).toBe('ok');
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/v1/health');
     expect(init.headers).toMatchObject({ 'X-User': 'u-ops-1', 'X-Role': 'operator' });

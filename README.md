@@ -14,8 +14,10 @@ Trợ lý ra quyết định quảng cáo cho người vận hành shop trên Sh
 | Plan kỹ thuật đầy đủ (14 file) | Có | [docs/dev-plan/](docs/dev-plan/README.md) |
 | Bộ sinh dữ liệu giả lập có đáp án | Có, chạy được | [mock-data/](mock-data/README.md) |
 | Dữ liệu đã sinh sẵn (cỡ `nho` và `demo`, seed 20261111) | Có | `mock-data/out/` |
-| Backend (FastAPI + DuckDB + OpenAI) | Chưa bắt đầu, mốc M0 | `backend/` |
-| Frontend (React + Vite) | Chưa bắt đầu, mốc M0 | `web/` |
+| Backend: khung M0 (FastAPI, DuckDB đủ bảng, `/api/v1/health`, CLI, 100 test) | Có | [backend/](backend/README.md) |
+| Frontend: khung M0 (React, router, 8 màn, chế độ fixture, 24 test) | Có | [web/](web/README.md) |
+| CI một cổng `ci` (backend, web, kiểm bộ sinh dữ liệu) | Có | [.github/workflows/ci.yml](.github/workflows/ci.yml) |
+| M1 · Lớp dữ liệu (adapter, ghép SKU, panel) | Tiếp theo | `backend/app/ingest`, `backend/app/panel` |
 
 ## Kiến trúc tóm tắt
 
@@ -51,13 +53,17 @@ Chi tiết: [docs/dev-plan/01-kien-truc-va-cong-nghe.md](docs/dev-plan/01-kien-t
 │  ├─ replay.js                   # phát lại ngày 11.11 theo giờ
 │  ├─ config.json
 │  └─ src/
-├─ backend/                       # (sẽ tạo ở M0) Python 3.11, FastAPI, DuckDB
+├─ backend/                       # Python 3.11, FastAPI, DuckDB
 │  ├─ app/{core,ingest,warehouse,panel,forecast,ads_effect,economics,
 │  │       simulator,orchestrator,governance,ai,live,api}/
+│  ├─ app/warehouse/schema.sql    # hợp đồng DB: mọi bảng của plan
+│  ├─ tasks.py                    # lệnh dev (lint, test, check, dev...), chạy được cả Windows
 │  ├─ tests/{unit,integration,e2e}/
-│  └─ eval/                       # chấm điểm bằng ground_truth
-└─ web/                           # (sẽ tạo ở M0) React 18, Vite, TypeScript, Tailwind
-   └─ src/{pages,components,api,lib}/
+│  └─ eval/                       # chấm điểm bằng ground_truth (app/ không được đọc)
+├─ web/                           # React 18, Vite, TypeScript, Tailwind, TanStack Query
+│  └─ src/{pages,components,api,lib}/
+├─ docs/quyet-dinh/               # nhật ký quyết định tự chốt khi dev
+└─ .github/                       # CI (ci.yml) + mẫu PR
 ```
 
 Cây thư mục chi tiết tới từng file nằm ở [01 · Kiến trúc và công nghệ, mục 4](docs/dev-plan/01-kien-truc-va-cong-nghe.md).
@@ -115,32 +121,30 @@ Dữ liệu "đang về" được ghi vào `mock-data/out/demo/live_stream/`, k�
 
 ### 4. Backend và frontend
 
-Phần này sẽ chạy được sau mốc M0. Lệnh dự kiến theo plan:
-
 ```powershell
-# Backend
+# Backend (terminal 1)
+uv python install 3.11                                  # một lần, nếu máy chưa có Python 3.11
 cd backend
-uv venv --python 3.11
 uv sync
-copy .env.example .env                                  # điền OPENAI_API_KEY
-uv run python -m app.cli migrate
-uv run python -m app.cli ingest --dir ../mock-data/out/demo
-uv run python -m app.cli backtest
-uv run python -m app.cli estimate-ads
-uv run uvicorn app.main:app --reload --port 8000        # http://localhost:8000/docs
+copy .env.example .env                                  # điền OPENAI_API_KEY khi tới M4
+uv run python -m app.cli migrate                        # tạo data/megaday.duckdb, đủ bảng
+uv run python tasks.py dev                              # API: http://localhost:8000/docs
 
-# Frontend (terminal khác)
+# Frontend (terminal 2)
 cd web
-npm install
-npm run gen:api                                         # sinh type từ openapi.json
-npm run dev                                             # http://localhost:5173
+npm ci
+npm run dev                                             # http://localhost:5173 (proxy /api sang :8000)
 ```
 
-Kiểm tra trước khi push:
+Chưa muốn chạy backend thì bật chế độ fixture cho web: tạo `web/.env.local` với `VITE_USE_FIXTURES=true`.
+
+Các lệnh `ingest`, `backtest`, `estimate-ads` đã có trong CLI nhưng còn là khung; chúng được làm thật ở M1–M3.
+
+Kiểm tra trước khi push (giống hệt CI):
 
 ```bash
-cd backend && uv run ruff check && uv run mypy app && uv run pytest
-cd web && npm test
+cd backend && uv run python tasks.py check     # ruff + mypy + pytest
+cd web && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
 ### Biến môi trường
@@ -195,16 +199,32 @@ Plan hiện vượt công suất 4 dev × 10 ngày. Xem 3 phương án xử lý 
 
 ## Quy ước làm việc
 
+Team làm **tuần tự từng mốc** (M0 → M1 → … → M5). Bên trong một mốc, nhiều người hoặc nhiều AI agent làm song song các task, mỗi người một nhóm file riêng.
+
 | Việc | Quy ước |
 |---|---|
-| Nhánh | `feat/<MÃ>-mo-ta-ngan`, ví dụ `feat/ING-03-ads-utc`. Sửa lỗi: `fix/<MÃ>-...` |
+| Nhánh | **Mỗi mốc một nhánh**: `feat/M1-du-lieu`, `feat/M2-du-bao`… Sửa lỗi gấp: `fix/<mô-tả>` |
 | Commit | Dòng đầu ≤ 72 ký tự, có mã task, ví dụ `ING-03: chuyển giờ báo cáo ads từ UTC` |
-| Pull request | ≤ 400 dòng đổi (không tính dữ liệu và file sinh). Mô tả làm gì, test gì, ảnh chụp nếu là UI |
-| Review | 1 người duyệt trong 4 giờ làm việc. D1 ↔ D2 review chéo dữ liệu/model; D3 ↔ D4 review chéo API/UI |
-| `main` | Được bảo vệ, chỉ merge qua PR có CI xanh |
-| Definition of Done | Code + test + CI xanh + đã chạy với dữ liệu `demo` + cập nhật docs nếu đổi hợp đồng |
+| Pull request | **Mỗi mốc một PR** vào `main`, điền đủ mẫu PR. Chỉ mở khi đạt tiêu chí mốc ở file 12 |
+| CI | Job cổng `ci` phải xanh. Job này tự chạy phần bị đụng: backend, web, kiểm bộ sinh dữ liệu |
+| `main` | Chỉ nhận code qua PR có `ci` xanh; cấm push thẳng và force push |
+| Quyết định | Vấn đề plan chưa nói rõ thì tự chốt theo tinh thần plan, ghi vào `docs/quyet-dinh/`. Đổi hợp đồng (schema, API, kiểu) thì sửa `docs/dev-plan/` trong cùng PR |
+| Definition of Done | Code + test + `ci` xanh + đã chạy với dữ liệu `demo` + đạt tiêu chí mốc |
 
 Mã task (`INF`, `ING`, `PNL`, `FC`, `ADS`, `ECO`, `SIM`, `ORC`, `AI`, `API`, `WEB`, `GOV`, `LIVE`, `EVAL`, `DEMO` + số) lấy từ bảng task trong file 12.
+
+## CI
+
+Một workflow duy nhất, [.github/workflows/ci.yml](.github/workflows/ci.yml), chạy trên mọi PR và mọi lần push vào `main`:
+
+| Job | Chạy khi PR đụng | Kiểm tra |
+|---|---|---|
+| `backend` | `backend/`, `mock-data/` | ruff, ruff format, mypy, pytest (gồm test chống rò `ground_truth`) |
+| `web` | `web/` | eslint, tsc, vitest, build |
+| `mock-data` | `mock-data/` | Sinh lại cỡ `nho` và `demo`, phải khớp y hệt bản đã commit |
+| `ci` | luôn chạy | Cổng: đỏ nếu job nào lỗi. Đây là check bắt buộc của nhánh `main` |
+
+Repo public nên GitHub chạy CI miễn phí. GitHub cũng quét và chặn ngay lúc push nếu ai lỡ commit API key.
 
 ## Nguyên tắc bắt buộc
 
@@ -219,6 +239,6 @@ Mã task (`INF`, `ING`, `PNL`, `FC`, `ADS`, `ECO`, `SIM`, `ORC`, `AI`, `API`, `W
 ## Việc đầu tiên
 
 1. Đọc [00 · Tổng quan](docs/dev-plan/00-tong-quan.md), [12 · Lộ trình](docs/dev-plan/12-lo-trinh-va-phan-viec.md) và file của vai trò mình (bảng "Đọc theo vai trò" trong [docs/dev-plan/README.md](docs/dev-plan/README.md)).
-2. Chốt các câu hỏi mở ở [13 · Rủi ro và câu hỏi mở](docs/dev-plan/13-rui-ro.md): độ dài hackathon, số người, phương án công suất, nơi deploy.
-3. Cài Python 3.11 + uv, chạy `node generate.js --size nho` để có dữ liệu.
-4. Bắt đầu các task M0 (`INF-*`) trong file 12: khung `backend/` và `web/`, CI, migrate DuckDB, test chống rò `ground_truth`.
+2. Đọc nhật ký quyết định M0 trong [docs/quyet-dinh/](docs/quyet-dinh/): có vài chỗ code lệch có chủ ý so với plan (ví dụ cột `"at"` phải đặt trong ngoặc kép trong SQL).
+3. Chạy được backend và web theo mục "Bắt đầu nhanh".
+4. Làm M1 (lớp dữ liệu) trên nhánh `feat/M1-du-lieu`. Hợp đồng DB nằm ở [backend/app/warehouse/schema.sql](backend/app/warehouse/schema.sql).

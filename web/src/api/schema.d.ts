@@ -5,10 +5,15 @@
 
 export interface components {
   schemas: {
+    // Matches backend app/api/health.py `Health`; returned inside Envelope.
     HealthStatus: {
       status: 'ok' | 'degraded';
       db: 'ok' | 'error';
-      ai: 'ok' | 'disabled' | 'error';
+      ai: 'ok' | 'disabled';
+      ai_mode: 'live' | 'record' | 'replay';
+      app_env: string;
+      version: string;
+      message: string;
     };
     Source: { id: string; kind: string; label: string };
     Meta: {

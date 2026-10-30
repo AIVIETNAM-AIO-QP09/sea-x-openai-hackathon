@@ -1,1 +1,12 @@
-{ "status": "ok", "db": "ok", "ai": "disabled" }
+{
+  "data": {
+    "status": "ok",
+    "db": "ok",
+    "ai": "disabled",
+    "ai_mode": "replay",
+    "app_env": "fixture",
+    "version": "0.1.0",
+    "message": "Hệ thống hoạt động bình thường."
+  },
+  "meta": { "computed_at": "2026-11-11T14:05:00+07:00" }
+}

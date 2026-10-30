@@ -28,6 +28,7 @@ Ghi các quyết định tự đưa ra khi dựng khung frontend ở mốc M0. M
 - **Vấn đề:** 08 §1 nói "phản hồi có số" dùng khung `{data, meta}`; 01 §Tiêu chí ghi `/health` trả `{"status":"ok","db":"ok","ai":"ok|disabled"}` trần.
 - **Lựa chọn:** client không ép khung: mỗi hook khai báo kiểu riêng (`HealthStatus` trần; `Envelope<T>` / `Page<T>` cho các endpoint còn lại). Fixture `/health` theo 01.
 - **Ảnh hưởng:** không có. Nếu backend bọc `/health` vào `data`, sửa một kiểu.
+- **Cập nhật khi ghép M0:** backend bọc `/health` trong `{data, meta}`, nên web đã đổi theo. Xem [M0-tich-hop.md](M0-tich-hop.md) mục 1.
 
 ## 5. Fixture: phần bổ sung ngoài ví dụ 08
 

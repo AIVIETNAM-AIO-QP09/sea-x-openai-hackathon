@@ -20,7 +20,7 @@ function qs(params: Record<string, string>): string {
 export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health,
-    queryFn: ({ signal }) => api.get<HealthStatus>('/health', signal),
+    queryFn: ({ signal }) => api.get<Envelope<HealthStatus>>('/health', signal),
   });
 }
 
