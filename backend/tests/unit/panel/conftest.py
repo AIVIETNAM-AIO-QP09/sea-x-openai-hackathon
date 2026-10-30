@@ -1,5 +1,5 @@
-"""Fixtures for the panel tests: mock-data loaded straight into the canonical tables
-(see ``mock_loader``), panel built once per session."""
+"""Fixtures for the panel tests: mock-data loaded into the canonical tables by the
+real ingest pipeline (``tests.mockdata.load_mock``), panel built once per session."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from app.panel.build import PanelBuildResult, build_hourly_panel, load_panel
-from tests.unit.panel.mock_loader import MOCK_OUT, answer_dir, load_mock
+from tests.mockdata import answer_dir, load_mock, require
 
 VN = "Asia/Ho_Chi_Minh"
 
@@ -40,8 +40,7 @@ class Built:
 
 
 def _build(size: str, *, live: bool) -> Iterator[Built]:
-    if not (MOCK_OUT / size / "don_hang_seller_center.csv").exists():
-        pytest.skip(f"mock-data/out/{size} chưa được sinh")
+    require(size)
     conn = duckdb.connect()
     load_mock(conn, size, live=live)
     t0 = time.perf_counter()

@@ -178,7 +178,7 @@ Chế độ app chỉ đề xuất, người vẫn làm theo cách cũ, để so
 
 | Bước | Quy tắc |
 |---|---|
-| Nhập | Adapter bỏ cột `Người mua`, `Số điện thoại`, `Địa chỉ nhận hàng` **trước khi ghi DuckDB**. Ghi issue `pii_dropped` (thông tin, không phải lỗi) |
+| Nhập | Adapter bỏ cột `Người mua`, `Số điện thoại`, `Địa chỉ nhận hàng` **trước khi ghi DuckDB**. Ghi issue `PII_DROPPED` (thông tin, không phải lỗi) |
 | Ghi chú người mua | Giữ (cần cho agent điều tra), nhưng chạy bộ lọc che số điện thoại `0\d{9,10}`, email, chuỗi giống địa chỉ (`Số \d+ Đường`) → `[đã che]` |
 | Gửi OpenAI | Chỉ gửi: tên cột, dòng mẫu đã che, số liệu tổng hợp, ghi chú đã che và bọc untrusted. Không gửi file thô |
 | Log | `ai_tool_calls.args/result_summary` không chứa PII (đã che từ nguồn) |

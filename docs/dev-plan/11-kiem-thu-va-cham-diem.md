@@ -81,22 +81,22 @@ Mỗi phần một file trong `backend/eval/`: (1)(2) `eval_data.py`, (3) `eval_
 | Cần người xem | alias đẩy sang "cần xem" | ghi lại |
 | Đúng sau khi người xem chọn gợi ý đầu | top-1 trong ứng viên đúng | ≥ 97% |
 
-**(2) Bắt lỗi dữ liệu** — so `data_quality_issues` với `manifest.json → loi_cai_san`.
+**(2) Bắt lỗi dữ liệu** — so `data_quality_issues` với `manifest.json → loi_cai_san`. Mã lỗi (`data_quality_issues.code`) là mã của [02 §3.1](02-lop-du-lieu.md) (viết hoa, cộng 4 mã adapter `ROW_INVALID`, `UNKNOWN_STATUS`, `DUP_ROW`, `MISSING_COLUMNS`); bảng mức ở `app/ingest/adapters/base.py: ISSUE_SEVERITY`.
 
 | Lỗi cài sẵn | Đạt khi |
 |---|---|
-| `mui_gio` | có issue `ads_timezone_shift`, đã đổi giờ (kiểm 1 dòng ads mẫu) |
-| `do_tre_ads` | `freshness.ads` báo trễ ≥ 2 giờ |
-| `thieu_ngay_ads` | issue `ads_missing_day` đúng ngày 2026-09-20 |
-| `trung_don` | số đơn bị loại = `so_dong` trong manifest (±0) |
-| `ton_am` | bắt đủ các dòng trong `chi_tiet` |
-| `thieu_gia_von` | đủ SKU trong danh sách |
+| `mui_gio` | có issue `ADS_TZ_SHIFT` đề xuất +7, đã đổi giờ (kiểm 1 dòng ads mẫu) |
+| `do_tre_ads` | issue `ADS_LAG`; `as_of` của ads trễ ≥ 2 giờ so với đơn (`ingest_batches.as_of`) |
+| `thieu_ngay_ads` | issue `ADS_GAP_DAY` đúng ngày 2026-09-20 |
+| `trung_don` | số issue `DUP_ORDER` = `so_dong` trong manifest (±0) |
+| `ton_am` | issue `NEG_STOCK` đủ các dòng trong `chi_tiet` |
+| `thieu_gia_von` | issue `MISSING_COST` (luật chặn) có đủ SKU trong danh sách |
 | `lech_ten_va_ma` | đã tính ở phần (1) |
-| `dinh_dang_tien` | 0 dòng giá vốn đọc lỗi |
-| `trang_thai_tam` | đơn "Đang giao" 48 giờ cuối được đánh dấu tạm |
+| `dinh_dang_tien` | 0 issue `MONEY_FORMAT` mức error ở file giá vốn |
+| `trang_thai_tam` | đơn "Đang giao" 48 giờ cuối được đánh dấu tạm (`status_final=false`, issue `PROVISIONAL_STATUS`, cờ `PROVISIONAL` trên panel) |
 | `combo` | tồn combo = min(tồn thành phần) |
-| `du_lieu_ca_nhan` | DuckDB không chứa PII |
-| `prompt_injection` | đơn có ghi chú được gắn `possible_instruction_in_note` |
+| `du_lieu_ca_nhan` | issue `PII_DROPPED`; DuckDB không chứa PII |
+| `prompt_injection` | đơn có ghi chú được gắn `orders.note_flagged` và issue `SUSPICIOUS_NOTE` |
 
 Báo cáo: "Bắt được 12/12 lỗi cài sẵn".
 

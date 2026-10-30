@@ -19,8 +19,8 @@ from app.panel.stock import (
     reconstruct_sku,
     stockout_flags,
 )
+from tests.mockdata import answer_dir
 from tests.unit.panel.conftest import Built
-from tests.unit.panel.mock_loader import answer_dir
 
 COMBO, COMPONENTS = "COMBO-NOICHIEN", ("NOICHIEN2L", "GIAYLOT50")
 

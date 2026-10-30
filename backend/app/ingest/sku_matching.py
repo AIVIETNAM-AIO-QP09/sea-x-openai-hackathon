@@ -45,6 +45,7 @@ from typing import Any, Literal
 
 import duckdb
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 from rapidfuzz import fuzz, process
 from scipy.optimize import linear_sum_assignment
@@ -616,13 +617,14 @@ def write_aliases(
             "WHERE status IN ('confirmed', 'rejected')",
         )
     }
+    have = {str(r[0]) for r in conn.execute("SELECT sku_id FROM skus").fetchall()}
     rows = []
     for m in matches:
         if m.status not in ("confirmed", "rejected") and (
             (m.source_type, m.raw_code, m.raw_name) in decided
         ):
             continue
-        if m.sku_id is not None:
+        if m.sku_id is not None and m.sku_id not in have:
             c = cat.get(m.sku_id)
             repo.ensure_sku(
                 conn,
@@ -630,9 +632,17 @@ def write_aliases(
                 is_bundle=c.is_bundle if c else False,
                 product_id=c.product_id if c else None,
             )
+            have.add(m.sku_id)
         rows.append(m.to_row())
+    if not rows:
+        return 0
+    # Ghi theo lô (INSERT … SELECT FROM df): executemany từng dòng chậm trên demo.
+    # Kiểu cột ghi rõ vì DuckDB đoán kiểu cột object từ mẫu đầu bảng (cột toàn NULL).
+    df = pd.DataFrame(rows)
+    for col in df.columns:
+        df[col] = df[col].astype("float64" if col == "score" else "string")
     # alias_id là hàm của khóa tự nhiên nên upsert theo UNIQUE cũng giữ nguyên id.
-    return repo.upsert_rows(conn, "sku_aliases", rows, key=_ALIAS_KEY)
+    return repo.upsert_df(conn, "sku_aliases", df, key=_ALIAS_KEY)
 
 
 def load_known_aliases(

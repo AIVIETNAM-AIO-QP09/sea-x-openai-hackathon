@@ -1,23 +1,30 @@
 """Command line: ``uv run python -m app.cli <command>`` (01 §5, INF-04).
 
-Implemented: ``migrate``, ``reset``, ``seed``, ``serve``, ``tables``.
-Stubs (exit code 3, message names the owning task): ``ingest``, ``rebuild-panel``,
-``backtest``, ``fit``, ``estimate-ads``, ``eval``.
+Implemented: ``migrate``, ``reset``, ``seed``, ``serve``, ``tables``, ``ingest``,
+``ingest-live``, ``rebuild-panel``, ``eval`` (runs ``python -m eval.eval_data`` in a
+subprocess: ``app`` never imports ``eval``).
+Stubs (exit code 3, message names the owning task): ``backtest``, ``fit``,
+``estimate-ads``.
 """
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 
 from app.core import messages_vi as vi
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.timeutil import iso_local
 from app.warehouse import repo
 from app.warehouse.db import Database, get_db, set_db
+
+if TYPE_CHECKING:  # the pipeline is imported lazily to keep the CLI start fast
+    from app.ingest.pipeline import IngestReport, LiveDeltaReport
 
 EXIT_NOT_IMPLEMENTED = 3
 
@@ -113,10 +120,78 @@ def serve(
     uvicorn.run("app.main:app", host=host, port=port, reload=reload)
 
 
-# ------------------------------------------------------------------ stubs
-def _todo(command: str, task: str, plan: str) -> NoReturn:
-    typer.echo(vi.CLI_NOT_IMPLEMENTED.format(command=command, task=task, plan=plan), err=True)
-    raise typer.Exit(EXIT_NOT_IMPLEMENTED)
+# ------------------------------------------------------------------ ingest
+def _n(value: int) -> str:
+    """Vietnamese thousands separator."""
+    return f"{value:,}".replace(",", ".")
+
+
+def _print_ingest(report: IngestReport, path: Path) -> None:
+    files = report.files
+    loaded = [f for f in files if f.status == "loaded"]
+    skipped = [f for f in files if f.status == "skipped"]
+    if not loaded and not [f for f in files if f.status == "failed"]:
+        typer.echo(vi.INGEST_NOTHING_NEW.format(path=path))
+    else:
+        typer.echo(
+            vi.INGEST_DONE.format(
+                loaded=len(loaded),
+                total=len(files),
+                path=path,
+                seconds=f"{report.duration_ms / 1000:.1f}".replace(".", ","),
+                skipped=len(skipped),
+            )
+        )
+    for f in files:
+        extra = ""
+        if f.issues:
+            extra = "  [" + ", ".join(f"{c}×{n}" for c, n in f.issues.items()) + "]"
+        typer.echo(
+            vi.INGEST_FILE_LINE.format(
+                name=f.file_name[:34],
+                source=f.source_type or "?",
+                status=f.batch_status if f.status != "skipped" else "đã nạp",
+                rows=_n(f.rows_in),
+                ms=_n(f.duration_ms),
+                extra=extra,
+            )
+        )
+        if f.rows_held:
+            typer.echo(vi.INGEST_FILE_HELD.format(n=_n(f.rows_held)))
+    typer.echo(vi.INGEST_TABLES)
+    for table, n in report.table_rows.items():
+        typer.echo(f"  {table:24s} {_n(n):>10s}")
+    auto = sum(s.get("auto_accepted", 0) for s in report.aliases.values())
+    confirmed = sum(s.get("confirmed", 0) for s in report.aliases.values())
+    detail = ", ".join(
+        f"{src}: {s.get('pending', 0)}/{sum(s.values())}" for src, s in report.aliases.items()
+    )
+    typer.echo(
+        vi.INGEST_ALIASES.format(
+            auto=_n(auto), confirmed=_n(confirmed), pending=_n(report.pending_aliases),
+            detail=detail,
+        )
+    )  # fmt: skip
+    if report.issues_by_code:
+        typer.echo(vi.INGEST_ISSUES)
+        for code, n in report.issues_by_code.items():
+            typer.echo(f"  {code:24s} {_n(n):>8s}")
+    else:
+        typer.echo(vi.INGEST_NO_ISSUES)
+    if report.panel is not None:
+        typer.echo(
+            vi.INGEST_PANEL.format(
+                rows=_n(report.panel.rows_written),
+                skus=report.panel.n_skus,
+                ms=_n(report.panel.duration_ms),
+            )
+        )
+    if report.timings_ms:
+        typer.echo(
+            vi.INGEST_TIMINGS.format(
+                detail=", ".join(f"{k} {_n(v)}" for k, v in report.timings_ms.items())
+            )
+        )
 
 
 @cli.command()
@@ -124,15 +199,81 @@ def ingest(
     dir: Annotated[Path, typer.Option("--dir", help="Thư mục chứa file của shop.")] = Path(
         "../mock-data/out/demo"
     ),
+    db: DbOpt = None,
+    force: Annotated[bool, typer.Option(help="Nạp lại cả file đã nạp (cùng mã băm).")] = False,
+    panel: Annotated[bool, typer.Option(help="Dựng hourly_panel sau khi nạp.")] = True,
 ) -> None:
-    """Nạp file lịch sử (adapter → kiểm lỗi → ghép SKU → warehouse → panel)."""
-    _todo("ingest", "ING-01..ING-08, PNL-01", "docs/dev-plan/02-lop-du-lieu.md §1")
+    """Nạp file lịch sử (nhận diện → adapter → ghép SKU → warehouse → kiểm lỗi → panel)."""
+    from app.ingest.pipeline import ingest_files
+
+    database = _db(db)
+    database.migrate()
+    report = ingest_files(database.write, dir, force=force, build_panel=panel)
+    _print_ingest(report, dir)
+    database.close()
+
+
+def _print_live(report: LiveDeltaReport, path: Path) -> None:
+    if report.status == "unchanged":
+        typer.echo(vi.LIVE_UNCHANGED.format(path=path))
+        return
+    if report.status == "empty":
+        typer.echo(vi.LIVE_EMPTY.format(path=path))
+    else:
+        typer.echo(
+            vi.LIVE_DONE.format(
+                seconds=f"{report.duration_ms / 1000:.1f}".replace(".", ","),
+                detail=", ".join(f"{k} +{_n(v)}" for k, v in report.new_rows.items()),
+                restart=vi.LIVE_RESTARTED if report.restarted else "",
+            )
+        )
+    if report.tick is not None:
+        typer.echo(
+            vi.LIVE_TICK.format(
+                orders=iso_local(report.tick.orders_inventory_until) or "—",
+                ads=iso_local(report.tick.ads_until) or "—",
+            )
+        )
+    if report.ingest is not None:
+        _print_ingest(report.ingest, path)
+
+
+@cli.command("ingest-live")
+def ingest_live(
+    dir: Annotated[
+        Path, typer.Option("--dir", help="Thư mục live (live_stream/ của replay.js).")
+    ] = Path("../mock-data/out/demo/live_stream"),
+    db: DbOpt = None,
+    panel: Annotated[bool, typer.Option(help="Dựng lại hourly_panel cho SKU bị chạm.")] = True,
+) -> None:
+    """Nạp phần mới của thư mục live (đọc trang_thai.json, con trỏ live_cursor)."""
+    from app.ingest.pipeline import ingest_live_delta
+
+    database = _db(db)
+    database.migrate()
+    report = ingest_live_delta(database.write, dir, build_panel=panel)
+    _print_live(report, dir)
+    database.close()
 
 
 @cli.command("rebuild-panel")
-def rebuild_panel() -> None:
-    """Dựng lại toàn bộ hourly_panel."""
-    _todo("rebuild-panel", "PNL-01..PNL-04", "docs/dev-plan/02-lop-du-lieu.md §6")
+def rebuild_panel(db: DbOpt = None) -> None:
+    """Dựng lại toàn bộ hourly_panel từ bảng chuẩn."""
+    from app.panel.build import build_hourly_panel
+
+    database = _db(db)
+    database.migrate()
+    res = build_hourly_panel(database.write)
+    typer.echo(
+        vi.PANEL_REBUILT.format(rows=_n(res.rows_written), skus=res.n_skus, ms=_n(res.duration_ms))
+    )
+    database.close()
+
+
+# ------------------------------------------------------------------ stubs
+def _todo(command: str, task: str, plan: str) -> NoReturn:
+    typer.echo(vi.CLI_NOT_IMPLEMENTED.format(command=command, task=task, plan=plan), err=True)
+    raise typer.Exit(EXIT_NOT_IMPLEMENTED)
 
 
 @cli.command()
@@ -155,10 +296,15 @@ def estimate_ads() -> None:
 
 @cli.command("eval")
 def eval_(
-    dir: Annotated[Path, typer.Option("--dir")] = Path("../mock-data/out/demo"),
+    size: Annotated[str, typer.Option("--size", help="Cỡ mock-data: nho | demo.")] = "demo",
+    live_hours: Annotated[int, typer.Option(help="Số giờ live 11.11 để đo thời gian.")] = 3,
 ) -> None:
-    """Chấm điểm bằng đáp án (chạy backend/eval, không nằm trong app/)."""
-    _todo("eval", "EVAL-02", "docs/dev-plan/11-kiem-thu-va-cham-diem.md §2")
+    """Chấm lớp dữ liệu bằng đáp án (chạy ``python -m eval.eval_data`` ở tiến trình
+    riêng: code trong app/ không import eval/)."""
+    backend_dir = Path(__file__).resolve().parents[1]
+    cmd = [sys.executable, "-m", "eval.eval_data", "--size", size, "--live-hours", str(live_hours)]
+    typer.echo(vi.EVAL_RUNNING.format(cmd=" ".join(cmd[1:])))
+    raise typer.Exit(subprocess.call(cmd, cwd=backend_dir))
 
 
 def _utf8_console() -> None:
