@@ -1,40 +1,133 @@
 {
   "data": [
     {
-      "id": "al-31",
-      "kind": "sales_below_forecast",
+      "id": "al-01M66S10QPB9HW47YNZ8J2XKQY",
+      "shop_id": "shop-demo",
+      "kind": "data_blocking",
       "severity": "high",
-      "target": { "sku": "AOGIUNHIET-M", "product": "Áo giữ nhiệt nam" },
-      "title": "Áo giữ nhiệt bán thấp hơn dự báo 3 giờ liền",
-      "impact_vnd": 1850000,
-      "raised_at": "2026-11-11T13:04:00+07:00",
+      "target_kind": "issue",
+      "target_id": "MISSING_COST",
+      "group_key": null,
+      "title": "Thiếu giá vốn cho 27 SKU đang chạy quảng cáo",
+      "detail": {
+        "code": "MISSING_COST",
+        "skus": [
+          {
+            "sku": "BANCHAI2-HONG"
+          },
+          {
+            "sku": "BINHHOA2-XANH"
+          },
+          {
+            "sku": "BINHLOC"
+          },
+          {
+            "sku": "BINHLOC2"
+          },
+          {
+            "sku": "BODAO"
+          },
+          {
+            "sku": "CHAO-LON"
+          },
+          {
+            "sku": "CHAO-NHO"
+          },
+          {
+            "sku": "CHAO5-NHO"
+          },
+          {
+            "sku": "DUAINOX"
+          },
+          {
+            "sku": "GIAPHOI"
+          },
+          {
+            "sku": "GIAPHOI5"
+          },
+          {
+            "sku": "KEGIAVI2-DEN"
+          },
+          {
+            "sku": "LYTT-500"
+          },
+          {
+            "sku": "LYTT2-500"
+          },
+          {
+            "sku": "MOCDAN-G1"
+          },
+          {
+            "sku": "MOCDAN2-G3"
+          },
+          {
+            "sku": "MOCDAN6-G3"
+          },
+          {
+            "sku": "NENTHOM2-A"
+          },
+          {
+            "sku": "NENTHOM3-A"
+          },
+          {
+            "sku": "QUATMINI-XANH"
+          },
+          {
+            "sku": "THAM-XANH"
+          },
+          {
+            "sku": "THAM2-HONG"
+          },
+          {
+            "sku": "THAM2-XANH"
+          },
+          {
+            "sku": "THAM5-HONG"
+          },
+          {
+            "sku": "THAM5-XANH"
+          },
+          {
+            "sku": "TUIZIP2-G1"
+          },
+          {
+            "sku": "TUIZIP5-G1"
+          }
+        ],
+        "n_skus": 27,
+        "first_data_hour": null
+      },
+      "impact_vnd": null,
       "status": "open",
-      "group_key": "AOGIUNHIET",
-      "investigation": null
-    },
-    {
-      "id": "al-32",
-      "kind": "sales_above_forecast",
-      "severity": "high",
-      "target": { "sku": "BINHNUOC500-HONG", "product": "Bình nước giữ nhiệt 500ml" },
-      "title": "Bình nước bán gấp 6 lần dự báo, có thể hết hàng tối nay",
-      "impact_vnd": 1200000,
-      "raised_at": "2026-11-11T14:10:00+07:00",
-      "status": "open",
-      "group_key": "BINHNUOC500",
-      "investigation": null
-    },
-    {
-      "id": "al-33",
-      "kind": "stockout_risk",
-      "severity": "high",
-      "target": { "sku": "NOICHIEN2L", "product": "Nồi chiên không dầu mini 2L", "campaign_id": "CD002" },
-      "title": "Nồi chiên còn đủ bán khoảng 6,5 giờ trong khi ads vẫn chạy",
-      "impact_vnd": 900000,
-      "raised_at": "2026-11-11T15:01:00+07:00",
-      "status": "open",
-      "group_key": "CD002",
-      "investigation": null
+      "raised_at": "2026-11-11T01:00:00+07:00",
+      "updated_at": "2026-11-11T01:00:00+07:00",
+      "last_seen_at": "2026-11-11T01:00:00+07:00",
+      "occurrences": 1,
+      "resolved_at": null,
+      "resolved_by": null,
+      "snoozed_until": null,
+      "acknowledged_by": null,
+      "acknowledged_at": null,
+      "source_event_id": null,
+      "dedupe_key": "data_blocking:code:MISSING_COST",
+      "investigation": null,
+      "target": {
+        "kind": "issue",
+        "id": "MISSING_COST",
+        "sku": null,
+        "campaign_id": null,
+        "product": null
+      }
     }
-  ]
+  ],
+  "meta": {
+    "data_as_of": "2026-11-11T01:00:00+07:00",
+    "computed_at": "2026-11-11T01:00:00+07:00",
+    "compute_state": null,
+    "confidence": null,
+    "sources": [],
+    "cache_hit": null,
+    "total": 1
+  },
+  "next_cursor": null
 }

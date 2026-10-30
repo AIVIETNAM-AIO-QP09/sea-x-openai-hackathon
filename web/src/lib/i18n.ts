@@ -34,7 +34,7 @@ export const viText = {
     alertsAria: (n: number) => `${n} cảnh báo đang mở`,
     openAssistant: 'Mở Trợ lý (Ctrl+K)',
     fixtureMode: 'Dữ liệu mẫu',
-    fixtureModeHint: 'Đang chạy chế độ fixture: số liệu lấy từ ví dụ trong tài liệu API, không phải từ backend.',
+    fixtureModeHint: 'Chế độ dữ liệu mẫu: số liệu là ảnh chụp API backend lúc 01:00 ngày 11.11 (DB demo), không cập nhật trực tiếp.',
   },
   role: {
     operator: 'Vận hành',
@@ -135,7 +135,7 @@ export const viText = {
     loadMore: 'Tải thêm',
     loadingMore: 'Đang tải thêm…',
     loadedCount: (n: number, more: boolean, total?: number | null) =>
-      total != null && more ? `Đã tải ${n}/${total} mã` : more ? `${n} mã đã tải, còn nữa` : `${n} mã`,
+      total != null && (more || total > n) ? `Đã tải ${n}/${total} mã` : more ? `${n} mã đã tải, còn nữa` : `${n} mã`,
     allSkusTitle: 'Toàn bộ SKU',
     noResults: (q: string) => `Không có SKU nào khớp "${q}".`,
     attentionNote: 'Chỉ gồm SKU có cảnh báo mở hoặc có đề xuất khác "Tiếp tục".',
@@ -270,7 +270,8 @@ export const viText = {
     skusInCampaign: (names: string) => `Gồm: ${names}`,
     goal: (goal: string) => `Mục tiêu: ${goal}`,
     dataLine: (dataAsOf: string, computedAt: string) => `Dữ liệu tới ${dataAsOf} · tính lúc ${computedAt}`,
-    fixtureNote: 'Số liệu minh họa từ fixture, không phải kết quả mô phỏng thật.',
+    fixtureNote: 'Số liệu minh họa soạn tay, không phải kết quả mô phỏng thật.',
+    snapshotNote: 'Ảnh chụp kết quả mô phỏng lúc 01:00 11.11; thanh trượt chỉ ước tính trên trình duyệt.',
     tier1: 'Kết luận',
     tier2: 'Vì sao?',
     tier3: 'Chi tiết kiểm tra',

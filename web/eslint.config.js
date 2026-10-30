@@ -5,7 +5,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', '.cloudflare', 'node_modules', 'src/api/schema.d.ts'] },
+  { ignores: ['dist', '.cloudflare', 'node_modules', 'src/api/schema.d.ts', '.vite'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

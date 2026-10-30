@@ -69,22 +69,44 @@ describe('createApiClient (HTTP)', () => {
 describe('createApiClient (fixtures)', () => {
   const client = createApiClient({ baseUrl: '/api/v1', useFixtures: true, user });
 
-  it('serves the CD002 recommendation: schedule_hours wins, pause blocked', async () => {
-    const rec = await client.get<Envelope<Recommendation>>('/recommendations/rec-551');
-    expect(rec.data.best?.kind).toBe('schedule_hours');
-    expect(rec.data.campaign_id).toBe('CD002');
+  // Ids come from the API snapshot (backend/eval/record_fixtures.py), so look them up.
+  async function cd002() {
+    const list = await client.get<{ data: Recommendation[] }>('/recommendations?active=true');
+    const rec = list.data.find((r) => r.campaign_id === 'CD002');
+    if (!rec?.scenario_id) throw new Error('no CD002 recommendation in fixtures');
+    return { recId: rec.recommendation_id, scnId: rec.scenario_id };
+  }
+
+  it('serves the CD002 recommendation (API snapshot 01:00 11.11): schedule_hours wins, pause blocked', async () => {
+    const { recId, scnId } = await cd002();
+    const rec = await client.get<Envelope<Recommendation>>(`/recommendations/${recId}`);
+    expect(rec.data.best).toMatchObject({ kind: 'schedule_hours', windows_local: [[0, 2], [12, 14]] });
+    expect(rec.data.runner_up).toMatchObject({ kind: 'reduce_budget', pct: 0.5 });
+    expect(rec.data.expected_gain_vnd).toBeGreaterThan(1_130_000);
+    expect(rec.data.expected_gain_vnd).toBeLessThan(1_330_000);
+    expect(rec.data.p_best_beats_runner_up).toBeGreaterThanOrEqual(0.99);
+    expect(rec.data.inputs_ref.data_as_of).toBe('2026-11-11T01:00:00+07:00');
     expect(rec.meta?.confidence).toBe('reference');
 
-    const scn = await client.get<{ data: { results: { action: { kind: string }; feasible: boolean; violations: string[] }[] } }>(
-      '/scenarios/scn-2291',
+    const scn = await client.get<{ data: { results: { action: { kind: string }; feasible: boolean; violations: string[]; objective: { mean: number } }[] } }>(
+      `/scenarios/${scnId}`,
     );
-    const pause = scn.data.results.find((r) => r.action.kind === 'pause');
-    expect(pause).toMatchObject({ feasible: false, violations: ['campaign_must_run'] });
+    for (const kind of ['pause', 'pause_until_restock']) {
+      expect(scn.data.results.find((r) => r.action.kind === kind)).toMatchObject({ feasible: false, violations: ['campaign_must_run'] });
+    }
+    const mean = (kind: string) => scn.data.results.find((r) => r.action.kind === kind)?.objective.mean ?? NaN;
+    // pitch: ~3,99 tr better than continue
+    expect(mean('schedule_hours') - mean('continue')).toBeGreaterThan(3_890_000);
+    expect(mean('schedule_hours') - mean('continue')).toBeLessThan(4_090_000);
   });
 
-  it('ignores the query string when matching fixtures', async () => {
-    const skus = await client.get<{ data: unknown[] }>('/skus?sort=priority');
-    expect(skus.data.length).toBeGreaterThan(0);
+  it('ignores the query string when matching fixtures; the SKU list is trimmed but keeps the real total', async () => {
+    const skus = await client.get<{ data: unknown[]; meta: { total: number; data_as_of: string }; next_cursor: string | null }>(
+      '/skus?sort=priority',
+    );
+    expect(skus.data).toHaveLength(50);
+    expect(skus.meta).toMatchObject({ total: 300, data_as_of: '2026-11-11T01:00:00+07:00' });
+    expect(skus.next_cursor).toBeNull();
   });
 
   it('answers GET /skus/{sku} from the list fixture, and serves /campaigns/CD002', async () => {
@@ -93,12 +115,13 @@ describe('createApiClient (fixtures)', () => {
     await expect(client.get('/skus/KHONGCO')).rejects.toMatchObject({ status: 404 });
     const cd = await client.get<{ data: { price_max_vnd: number; goal: { goal_id: string } } }>('/campaigns/CD002');
     expect(cd.data.price_max_vnd).toBe(690000);
-    expect(cd.data.goal.goal_id).toBe('goal-cd002-1111');
+    expect(cd.data.goal).toMatchObject({ kind: 'profit', deadline: '2026-11-12T00:00:00+07:00' });
   });
 
   it('fixtures have the real response shape (results carry key/label and full Dist)', async () => {
+    const { scnId } = await cd002();
     const scn = await client.get<{ data: { results: { key: string; label: string; spend: Record<string, number> }[]; cache_hit: boolean } }>(
-      '/scenarios/scn-2291',
+      `/scenarios/${scnId}`,
     );
     for (const r of scn.data.results) {
       expect(r.key).toBeTruthy();
