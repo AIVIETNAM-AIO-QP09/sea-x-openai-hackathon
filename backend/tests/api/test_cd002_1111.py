@@ -81,6 +81,10 @@ def test_cd002_schedule_hours_wins(run_1000: dict[str, Any]) -> None:
     by = {r["key"]: r for r in d["results"]}
     assert by["pause"]["feasible"] is False
     assert by["pause"]["violations"] == ["campaign_must_run"]
+    # VN time, not ISO UTC (sửa lỗi nhỏ M3, lỗi 3): first committed hour left is 01:00 11/11
+    assert by["pause"]["violation_details"] == [
+        "Tắt chiến dịch trong khung flash sale đã cam kết với sàn (3 giờ, từ 01:00 11/11)"
+    ]
     assert by["pause_until_restock"]["feasible"] is False
     assert any("cam kết với sàn" in r for r in rec["reasons"])
     kinds = [s["kind"] if s else None for s in rec["reason_sources"]]

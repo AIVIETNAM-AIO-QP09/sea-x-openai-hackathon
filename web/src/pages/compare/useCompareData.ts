@@ -26,7 +26,7 @@ export type CompareTarget = {
 /** Active recommendation of a campaign from a /recommendations page (fixtures ignore the filter). */
 export function pickActive(list: readonly Recommendation[] | undefined, campaignId: string | undefined): Recommendation | undefined {
   if (!list || !campaignId) return undefined;
-  const mine = list.filter((r) => r.campaign_id === campaignId && !r.superseded_by);
+  const mine = list.filter((r) => r.campaign_id === campaignId && !r.superseded_by && !r.what_if);
   return mine.find((r) => r.active !== false) ?? mine[0];
 }
 

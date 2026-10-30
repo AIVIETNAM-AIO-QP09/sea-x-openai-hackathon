@@ -746,10 +746,7 @@ export interface components {
             /** Budget Used Pct */
             budget_used_pct: number | null;
             iroas: components["schemas"]["IroasBrief"] | null;
-            /** Recommendation */
-            recommendation: {
-                [key: string]: unknown;
-            } | null;
+            recommendation: components["schemas"]["CampaignRecRef"] | null;
             /** Started At */
             started_at: string | null;
             /** Sku Detail */
@@ -761,6 +758,28 @@ export interface components {
                 [key: string]: unknown;
             }[];
             goal: components["schemas"]["GoalBrief"] | null;
+        };
+        /**
+         * CampaignRecRef
+         * @description Active recommendation of the campaign (times with ``+07:00``).
+         */
+        CampaignRecRef: {
+            /** Recommendation Id */
+            recommendation_id: string;
+            /** Status */
+            status: string;
+            /** Best */
+            best: {
+                [key: string]: unknown;
+            } | null;
+            /** Confidence */
+            confidence: string;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Data As Of */
+            data_as_of?: string | null;
         };
         /** CampaignRef */
         CampaignRef: {
@@ -815,10 +834,7 @@ export interface components {
             /** Budget Used Pct */
             budget_used_pct: number | null;
             iroas: components["schemas"]["IroasBrief"] | null;
-            /** Recommendation */
-            recommendation: {
-                [key: string]: unknown;
-            } | null;
+            recommendation: components["schemas"]["CampaignRecRef"] | null;
         };
         /** Candidate */
         Candidate: {
@@ -1334,6 +1350,8 @@ export interface components {
             sources?: components["schemas"]["SourceRef"][];
             /** Cache Hit */
             cache_hit?: boolean | null;
+            /** Total */
+            total?: number | null;
         };
         /** ModelRef */
         ModelRef: {
@@ -1628,6 +1646,11 @@ export interface components {
              * @default true
              */
             active: boolean;
+            /**
+             * What If
+             * @default false
+             */
+            what_if: boolean;
         };
         /** ScenarioResultOut */
         ScenarioResultOut: {
@@ -1658,6 +1681,8 @@ export interface components {
             p_target?: number | null;
             /** Goal Note */
             goal_note?: string | null;
+            /** Duplicate Of */
+            duplicate_of?: string | null;
             /** Key */
             key: string;
             /** Label */

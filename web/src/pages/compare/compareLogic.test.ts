@@ -102,9 +102,17 @@ describe('buildSimRequest (POST /scenarios/run)', () => {
     });
   });
 
-  it('drops slider keys echoed from a stored run (only the sliders set them)', () => {
-    const stale = { request: { ...echoed.request, param_overrides: { leftover_value_per_unit: 9_000_000, 'restock_delay_days@NOI': 2, other: 1 } } };
-    expect(buildSimRequest(stale, rec, { leftoverValue: null, restockDelayDays: 0 }, 1000).param_overrides).toEqual({ other: 1 });
+  it('keeps the overrides of the echoed run; the sliders win on their keys', () => {
+    const whatIf = { request: { ...echoed.request, param_overrides: { leftover_value_per_unit: 20_000, 'restock_delay_days@NOI': 2 } } };
+    expect(buildSimRequest(whatIf, rec, { leftoverValue: null, restockDelayDays: 0 }, 1000).param_overrides).toEqual({
+      leftover_value_per_unit: 20_000,
+      'restock_delay_days@NOI': 2,
+    });
+    expect(buildSimRequest(whatIf, rec, { leftoverValue: 0, restockDelayDays: 1 }, 1000).param_overrides).toEqual({
+      leftover_value_per_unit: 0,
+      'restock_delay_days@NOI': 2,
+      restock_delay_days: 1,
+    });
   });
 
   it('without an echo lets the backend fill start/horizon from the goal', () => {
@@ -169,11 +177,11 @@ describe('no zone bar, blocked runs, goals', () => {
     expect(blockingInfo(new ApiError(409, 'CONSTRAINT_VIOLATION', 'x'))).toBeNull();
   });
 
-  it('goal label from the campaign, deadline in VN time', () => {
+  it('goal label from the campaign (the API includes the deadline)', () => {
     const goal = {
       goal_id: 'g',
       kind: 'profit',
-      label: 'Lợi nhuận',
+      label: 'Lợi nhuận tới 00:00 12/11',
       deadline: '2026-11-12T00:00:00+07:00',
       target_units: null,
       confirmed_by: 'u-lead-1',

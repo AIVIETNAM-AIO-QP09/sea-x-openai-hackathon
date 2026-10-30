@@ -14,6 +14,7 @@ from app.ads_effect.iroas import load_estimate
 from app.ads_effect.schemas import IroasEstimate
 from app.api.common import MAX_LIMIT, compute_state, data_as_of, paginate, today_bounds
 from app.api.deps import Conn, Viewer
+from app.api.economics import goal_label
 from app.api.schemas import Envelope, LocalDatetime, Meta, Page, SourceRef
 from app.api.snapshot import (
     AD_STATUS_VI,
@@ -22,8 +23,8 @@ from app.api.snapshot import (
     commitments,
 )
 from app.core.errors import NotFound
-from app.core.timeutil import iso_local, local_date, utcnow
-from app.economics.goals import GOAL_LABEL_VI, active_goal
+from app.core.timeutil import local_date, utcnow
+from app.economics.goals import active_goal
 from app.warehouse.repo import fetch_all
 
 router = APIRouter(tags=["campaigns"])
@@ -39,6 +40,18 @@ class IroasBrief(BaseModel):
     confidence: str
 
 
+class CampaignRecRef(BaseModel):
+    """Active recommendation of the campaign (times with ``+07:00``)."""
+
+    recommendation_id: str
+    status: str
+    best: dict[str, Any] | None
+    confidence: str
+    scenario_id: str | None = None
+    created_at: LocalDatetime | None = None
+    data_as_of: LocalDatetime | None = None
+
+
 class CampaignSummary(BaseModel):
     campaign_id: str
     name: str
@@ -52,7 +65,7 @@ class CampaignSummary(BaseModel):
     spend_today_vnd: int | None
     budget_used_pct: float | None
     iroas: IroasBrief | None
-    recommendation: dict[str, Any] | None
+    recommendation: CampaignRecRef | None
 
 
 class CampaignSku(BaseModel):
@@ -69,7 +82,7 @@ class CampaignSku(BaseModel):
 class GoalBrief(BaseModel):
     goal_id: str
     kind: str
-    label: str
+    label: str  # "Lợi nhuận tới 00:00 12/11", same as GET /goals
     deadline: LocalDatetime
     target_units: int | None
     confirmed_by: str
@@ -147,7 +160,7 @@ def _campaign_rows(
                 if (sp is not None and budget)
                 else None,
                 iroas=_iroas_brief(load_estimate(conn, cid)),
-                recommendation={**rec, "created_at": iso_local(rec["created_at"])} if rec else None,
+                recommendation=CampaignRecRef.model_validate(rec) if rec else None,
             )
         )
     return out
@@ -223,7 +236,7 @@ def get_campaign(campaign_id: str, conn: Conn, _user: Viewer) -> Envelope[Campai
         GoalBrief(
             goal_id=g.goal_id,
             kind=g.kind,
-            label=GOAL_LABEL_VI.get(g.kind, g.kind).capitalize(),
+            label=goal_label(g),
             deadline=g.deadline,
             target_units=g.target_units,
             confirmed_by=g.confirmed_by,

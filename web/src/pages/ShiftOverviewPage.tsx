@@ -179,6 +179,8 @@ function AllSkus() {
   }, [sort, query]);
   const pages = useSkuPages(filters);
   const items = pages.data?.pages.flatMap((p) => p.data) ?? [];
+  // rows matching the filters, all pages (meta.total); unknown on old payloads
+  const total = pages.data?.pages[0]?.meta?.total ?? null;
 
   let body;
   if (pages.isPending) body = <SkeletonRows rows={5} />;
@@ -189,7 +191,7 @@ function AllSkus() {
       <>
         <SkuTable items={items} />
         <div className="mt-2 flex items-center gap-3 text-sm text-muted">
-          <span>{t.loadedCount(items.length, Boolean(pages.hasNextPage))}</span>
+          <span>{t.loadedCount(items.length, Boolean(pages.hasNextPage), total)}</span>
           {pages.hasNextPage ? (
             <button
               type="button"
@@ -208,7 +210,7 @@ function AllSkus() {
     <section aria-labelledby="all-heading">
       <div className="mb-2 flex flex-wrap items-end gap-3">
         <h2 id="all-heading" className="font-medium">
-          {t.allSkusTitle}
+          {total != null ? t.allSkus(total) : t.allSkusTitle}
         </h2>
         <label className="ml-auto flex items-center gap-1.5 text-sm">
           <Search aria-hidden className="size-4 text-muted" />

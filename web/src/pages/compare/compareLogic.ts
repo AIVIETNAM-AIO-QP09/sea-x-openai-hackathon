@@ -14,7 +14,7 @@ import type {
 } from '../../api/types';
 import { computeZoneBar } from '../../lib/breakeven';
 import { pauseBlockedNote } from '../../lib/zoneBarText';
-import { formatDate, formatPct, formatTime, formatVndMillions } from '../../lib/format';
+import { formatPct, formatVndMillions } from '../../lib/format';
 import { pctOf, viText } from '../../lib/i18n';
 import type { Citation } from '../../components/CitationChip';
 
@@ -117,7 +117,6 @@ export function paramOverrides(w: WhatIf): Record<string, number> {
 }
 
 export const DEFAULT_SEED = 20261111;
-const SLIDER_KEYS = new Set(['leftover_value_per_unit', 'restock_delay_days']);
 
 /**
  * SimRequest for a slider re-run. Reuses the run's own `request` (M3-api §2: re-sending
@@ -132,13 +131,11 @@ export function buildSimRequest(
   const base: SimRequest = run?.request
     ? { ...run.request }
     : { campaign_id: rec.campaign_id, goal_id: rec.inputs_ref.goal_id, samples, seed: DEFAULT_SEED };
-  // Slider keys come only from the sliders: a stored run may echo an old override
-  // (seen on GET /scenarios/{id} rebuilt from DB), which must not leak into the what-if.
-  const kept = Object.fromEntries(Object.entries(base.param_overrides ?? {}).filter(([k]) => !SLIDER_KEYS.has(k.split('@')[0] ?? k)));
+  // The echo is exactly the request that ran (M3-api "Sửa lỗi nhỏ M3"); the sliders win.
   return {
     ...base,
     actions: base.actions ?? null,
-    param_overrides: { ...kept, ...paramOverrides(w) },
+    param_overrides: { ...base.param_overrides, ...paramOverrides(w) },
     samples,
     seed: base.seed ?? DEFAULT_SEED,
   };
@@ -281,11 +278,10 @@ export function noZoneBarText(rec: Recommendation): string {
   return t.noZoneBar;
 }
 
-/** "Lợi nhuận tới 00:00 12/11" from the campaign's active goal; falls back to the id. */
+/** "Lợi nhuận tới 00:00 12/11" (label from the API, deadline included); falls back to the id. */
 export function goalText(goal: GoalBrief | null | undefined, goalId: string): string {
   if (!goal || goal.goal_id !== goalId) return goalId;
-  const label = goal.label.includes(' tới ') ? goal.label : `${goal.label} tới ${formatTime(goal.deadline)} ${formatDate(goal.deadline)}`;
-  return goal.target_units != null ? `${label} · ${t.goalTarget(goal.target_units)}` : label;
+  return goal.label;
 }
 
 /** Default deadline for a new goal: next local midnight after the data clock. */

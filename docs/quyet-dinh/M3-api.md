@@ -44,7 +44,7 @@ Chưa làm (M4): decisions, actions, alerts, AI, SSE `/stream`, live, `/bundles`
 - **Khung phản hồi:** `{data, meta}`. Danh sách là `{data: [...], meta, next_cursor}`, với `next_cursor` ở cấp ngoài cùng như 08. `meta` luôn có `data_as_of`, `computed_at`, `compute_state`, `confidence`, `sources[]`, `cache_hit` (null nếu không áp dụng). Mọi thời điểm có offset `+07:00`.
 - **`Source`** (`meta.sources[]`, `reason_sources[]`): `{id, kind, label, data_as_of, tool, href}`. `kind` ∈ `scenario | forecast | iroas | commitment | contribution | snapshot | panel`. `href` là đường API (`/api/v1/...`), không phải route web.
 - **Tên trường khác plan / thêm vào:**
-  - `/skus`: `hours_of_cover = {p10, p50, p90, horizon_hours}`. `p10` là trường hợp bán nhanh. `null` nghĩa là chưa hết hàng trong horizon. Thêm `sold_3h_units`, `forecast_id`, `confidence`, `product_id`, `is_bundle`. `campaign = {id, status (tiếng Việt), status_code}`. `recommendation = {recommendation_id, status, best, confidence, scenario_id, created_at}`. `deviation` = `on_track | below_forecast | above_forecast | null` (null khi dự báo không bắt đầu trong phần dữ liệu đã có).
+  - `/skus`: `hours_of_cover = {p10, p50, p90, horizon_hours}`. `p10` là trường hợp bán nhanh. `null` nghĩa là chưa hết hàng trong horizon. Thêm `sold_3h_units`, `forecast_id`, `confidence`, `product_id`, `is_bundle`. `campaign = {id, status (tiếng Việt), status_code}`. `recommendation = {recommendation_id, status, best, confidence, scenario_id, created_at}`. `deviation` = `on_track | below_forecast | above_forecast | null` (null khi dự báo không bắt đầu trong phần dữ liệu đã có). `meta.total` = số dòng khớp bộ lọc trên mọi trang (§6 S5).
   - `/skus/{sku}`: thêm các trường của `get_sku_snapshot`. Nhóm nhu cầu nằm ở `demand_group_info = {value, source, confirmed}`, còn `demand_group` ở cấp trên vẫn là chuỗi như ở danh sách. Chiến dịch chi tiết ở `campaign_detail` (`shared_with`, `daily_budget_vnd`). Thêm `cost`, `contribution_per_unit_vnd`, `incoming`, `commitments[].windows_local`.
   - `/campaigns/{id}`: `price_max_vnd` là max của thanh trượt V, bằng giá bán cao nhất của các SKU không phải combo (05 §3: V ≤ giá bán). Thêm `sku_detail[]` (giá niêm yết, giá hiệu lực, tồn, giá vốn), `goal` (mục tiêu đang hiệu lực, có `label`), `commitments`, `iroas` tóm tắt, `spend_today_vnd`, `budget_used_pct`.
   - `/campaigns/{id}/iroas`: `iroas = {p10, p50, p90, mean}`. **`p50` = trung bình hậu nghiệm**, vì bảng `iroas_estimates` chỉ lưu mean, p10, p90. Thay `n_switch_events` bằng `n_clean_off_hours` và `excluded_hours`. `method` = `model_id`.
@@ -99,11 +99,11 @@ Mọi nguồn đều mang `data_as_of` của `inputs_ref`. Nếu sau này simula
 - **"Tắt riêng SKU"**: thêm trường `disable_skus` vào body. Chiến dịch dùng ngân sách chung trả 409 `CONSTRAINT_VIOLATION` (`details.constraint = "sku_level_control"`, lời nhắn gợi ý tách chiến dịch). Chiến dịch 1 SKU trả 400 kèm gợi ý dùng hành động `pause`. SKU không thuộc chiến dịch trả 400.
 - `leftover_value_per_unit` không có max cố định. Simulator chỉ chặn dạng `key@SKU`, nên API chặn thêm dạng không có SKU bằng giá bán cao nhất của chiến dịch.
 - Trúng cache thì `meta.cache_hit = true`, không ghi DB, không ghi audit.
-- `start` nhận `+07:00` hoặc `Z`. API đổi về UTC trước khi gọi simulator: khóa cache của simulator dùng `start.isoformat()`, nên cùng một thời điểm mà khác offset sẽ trượt cache (bắt được bằng test). Simulator nên tự chuẩn hóa ở đợt sau.
+- `start` nhận `+07:00` hoặc `Z`. Khóa cache của simulator chuẩn hóa `start` về UTC (`service._key`), nên API chuyển nguyên `start` cho simulator. Trước đây API tự đổi, nay đã bỏ (xem §6 S4).
 - 409 "tắt CD002 trong 12:00–14:00" của 08 thuộc `POST /decisions/{id}/actions` (M4). Ở mô phỏng, hành động vi phạm vẫn được tính và trả `feasible: false` + `violations`, để màn So sánh hiện lý do bị khóa.
 
 ### Q8. `GET /scenarios/{id}` đọc từ bộ nhớ, thiếu thì đọc DB
-API giữ 64 `ScenarioRun` gần nhất trong bộ nhớ (đủ trường). Ngoài số đó thì dựng lại từ `scenarios` + `scenario_results` + `recommendations`. Bảng không lưu `lost_units`, `violation_details`, `goal_eligible` nên các trường này là `null` hoặc mặc định. `request.actions` lúc đó là danh sách hành động đã chạy, không còn là `null`.
+API giữ 64 `ScenarioRun` gần nhất trong bộ nhớ (đủ trường). Ngoài số đó thì dựng lại từ `scenarios` + `scenario_results` + `recommendations`. Bảng không lưu `lost_units`, `violation_details`, `goal_eligible`, `duplicate_of` nên các trường này là `null` hoặc mặc định. `request` đọc từ cột `scenarios.request`: đúng request đã chạy, `actions` vẫn `null` nếu dùng mặc định (§6 S2). Chỉ dòng ghi trước migration 3 mới dựng lại từ các cột, khi đó `request.actions` là danh sách hành động đã chạy.
 
 ### Q9. Mục tiêu có phiên bản
 `POST /goals` (hoặc `PUT /goals/{scope}/{scope_id}`) tạo dòng mới với `confirmed_by` = `X-User`. Mục tiêu đang hiệu lực cùng phạm vi chuyển `active = false` và nhận `valid_to`. `version` = max cũ + 1 (10 §4). `create_goal` của ECO-03 luôn ghi `version = 1`, nên API cập nhật lại sau khi tạo.
@@ -326,7 +326,46 @@ Gửi lại đúng `request` thì trả cùng `scenario_id`, `meta.cache_hit: tr
  "next_cursor": "eyJvIjozfQ"}
 ```
 
-## 6. Đề xuất cho đợt sau
+## 6. Sửa lỗi nhỏ M3 (30/10, sau chạy thử end-to-end của web)
+
+Các lỗi 1–6 ở M3-web §13. Kết quả mô phỏng và đề xuất không đổi: `eval/demo_whatif.py --only 1,4g,5,8a` ra đúng số như trước (CD002 11/11 01:00 profit: `schedule_hours 0-2,12-14`, hơn continue 3,99 tr, hơn giảm 50% 1,23 tr). Test: `tests/api/test_m3_fixes.py` và một khẳng định thêm ở `tests/api/test_cd002_1111.py`.
+
+### S1. Lần chạy what-if không thay đề xuất đang hiệu lực (lỗi 2)
+- **Vấn đề:** mỗi `POST /scenarios/run` có `param_overrides` (kéo thanh trượt) tạo đề xuất mới và supersede đề xuất của chiến dịch. Mở lại màn thì "đề xuất" là kết quả what-if của người vừa kéo.
+- **Lựa chọn:** spec 08 không có cờ `persist`/`what_if`, nên body giữ nguyên. Simulator tự xếp loại (`service.is_what_if`): lần chạy là **what-if** khi có `param_overrides` (kể cả giá trị 0), có `session_id`, hoặc có `actions` khác tập hành động mặc định. Lần chạy what-if vẫn được lưu (`scenarios`, `scenario_results`, `recommendations`) để `GET /scenarios/{id}`, `GET /recommendations/{id}` và nguồn trích dẫn dùng được. Dòng đề xuất của nó mang `what_if = TRUE`: không bao giờ là đề xuất hiện hành, không supersede dòng nào, không phát `RecommendationChanged`. Chỉ lần chạy chuẩn (không override, không session, hành động mặc định) mới supersede.
+- **Phản hồi:** `RecommendationOut` thêm `what_if` (mặc định `false`). Với what-if: `what_if = true`, `active = false`, `superseded_by = null`. `GET /recommendations?active=true`, `/skus`, `/campaigns` bỏ qua dòng what-if. `active=false` vẫn liệt kê chúng (có cờ). `active` và `superseded_by` trong `POST /scenarios/run` và `GET /scenarios/{id}` đọc lại từ DB: gửi lại request của một lần chạy chuẩn đã bị thay thì trúng cache nhưng trả `active = false`.
+- **Khóa cache** thêm `session_id`. Trước đây lần chạy có `session_id` mà phiên chưa có tham số trúng cache của lần chạy chuẩn.
+- **Migration 3** thêm `recommendations.what_if` và `scenarios.request`. Với DB cũ: đánh dấu `what_if` cho đề xuất có `overrides` khác rỗng, rồi trả lại cho mỗi chiến dịch đề xuất chuẩn mới nhất (`superseded_by = NULL`). DB demo đang lỗi sẽ tự đúng khi mở bằng code mới.
+- AI (`app/ai/tools/compute.py`) giữ nguyên: what-if của AI chạy `persist=False`.
+
+### S2. `request` echo đúng request đã chạy (lỗi 1)
+- **Nguyên nhân:** log uvicorn lúc 14:52 cho thấy lần `POST /scenarios/run` với `leftover_value_per_unit = 9.000.000` trả 200, vì bản API khi đó chưa chặn khoảng giá trị. Lần chạy đó được lưu và, do lỗi 2, thay đề xuất chuẩn. `GET /scenarios/{id}` của đề xuất hiện hành vì thế echo đúng override 9 triệu của lần chạy đó. API bây giờ chặn giá trị này nên gửi lại → 400. Code hiện tại kiểm `_check_leftover` (và `parse_overrides`) **trước** khi mô phỏng và không ghi gì khi trả 400 (có test).
+- **Sửa thêm:** read-back cũ dựng `request` từ các cột. `actions` khi đó là danh sách 6 hành động đã chạy, theo thứ tự API sắp. Gửi lại thì khóa cache khác (thứ tự hành động) → chạy lại và tạo đề xuất mới. Nay cột `scenarios.request` lưu nguyên request (đã điền `start` UTC và `horizon_hours`), và `GET /scenarios/{id}` echo đúng nó. Gửi lại trúng cache, cùng `scenario_id`.
+
+### S3. Giờ VN trong `violation_details` (lỗi 3)
+`engine.simulate` truyền nhãn giờ `HH:MM dd/mm` giờ VN cho `check_action`: "… (3 giờ, từ 01:00 11/11)". Chỉ đổi câu chữ.
+
+### S4. Không còn thời điểm UTC lọt ra (lỗi 4)
+- `CampaignDetail.recommendation` (và `/campaigns`) là model `CampaignRecRef`, với `created_at`, `data_as_of` kiểu `LocalDatetime`. `snapshot.active_recommendations` parse `inputs_ref.data_as_of` (JSON text dạng `Z`) thành datetime.
+- Rà nhanh bằng test: `/campaigns`, `/campaigns/CD002`, `/skus`, `/skus/{sku}`, `/scenarios/{id}`, `/recommendations[/{id}]`, `/goals`, `/freshness` không còn chuỗi `…Z` hay `…+00:00`.
+- `start` về UTC: khóa cache simulator đã chuẩn hóa từ đợt SIM-04 (`tests/unit/simulator/test_service_key.py`). API bỏ bước tự đổi. Test API: cùng thời điểm gửi dạng `Z` rồi `+07:00` trúng cùng một cache.
+
+### S5. `meta.total` cho `/skus`, nhãn mục tiêu có hạn (lỗi 5)
+- 09 §2.1 chỉ ghi "Toàn bộ SKU (300)", không quy định trường. Chọn `meta.total` (trường mới của `Meta`, `null` ở endpoint khác): số dòng khớp bộ lọc (`q`, `campaign_id`, …) trên mọi trang.
+- `CampaignDetail.goal.label` dùng chung `goal_label` với `/goals`: "Lợi nhuận tới 00:00 12/11" ("Bán đủ số lượng 97 sp tới …" với `sell_target`). `deadline` vẫn có như trước.
+
+### S6. `duplicate_of` trong OpenAPI (lỗi 6)
+`ScenarioResult.duplicate_of` (`[DEV]`) là key của hành động xếp trên có kết quả trùng hệt (05 §9 bước 3, vd `pause_until_restock` ≡ `pause` khi không có hàng về), lấy từ `Selection.duplicate_of`. Không lưu DB: read-back trả `null`.
+
+### Web
+- `schema.d.ts` sinh lại từ OpenAPI. `ScenarioResult` = `ScenarioResultOut` (có `duplicate_of`). `Recommendation` có `what_if` (tùy chọn ở web). `CampaignDetail.recommendation` có kiểu.
+- Bỏ chỗ né Q-W6: `buildSimRequest` giữ `param_overrides` của request echo, thanh trượt ghi đè khóa của nó. `goalText` dùng thẳng `goal.label`. Khi chọn đề xuất, bỏ dòng `what_if`.
+- Tổng quan ca: "Toàn bộ SKU (N)" và "Đã tải n/N mã" khi có `meta.total`.
+
+### Ngoài phạm vi
+`tests/unit/test_demo_import.py` ghi/đọc file không chỉ định encoding nên hỏng trên Windows (cp1252). Đã thêm `encoding="utf-8"` để `tasks.py check` sạch.
+
+## 7. Đề xuất cho đợt sau
 1. **Orchestrator (ORC-01/04):** ghi `sku_compute_state` để API trả `queued`/`computing`. Dự báo trước ở mỗi mốc để lần chạy đầu `/scenarios/run` không mất 10–25 giây.
 2. **Plan 06:** đưa ngưỡng stale vào danh mục tham số (Q2) nếu muốn sửa được trên UI.
 3. **Simulator:** trả `reasons` có cấu trúc (`{text, source_kind, sku}`) để `reason_sources` không phải dựa vào câu chữ (Q6).

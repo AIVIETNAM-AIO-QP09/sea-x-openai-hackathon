@@ -134,7 +134,8 @@ export const viText = {
     searchPlaceholder: 'Tìm theo mã hoặc tên…',
     loadMore: 'Tải thêm',
     loadingMore: 'Đang tải thêm…',
-    loadedCount: (n: number, more: boolean) => (more ? `${n} mã đã tải, còn nữa` : `${n} mã`),
+    loadedCount: (n: number, more: boolean, total?: number | null) =>
+      total != null && more ? `Đã tải ${n}/${total} mã` : more ? `${n} mã đã tải, còn nữa` : `${n} mã`,
     allSkusTitle: 'Toàn bộ SKU',
     noResults: (q: string) => `Không có SKU nào khớp "${q}".`,
     attentionNote: 'Chỉ gồm SKU có cảnh báo mở hoặc có đề xuất khác "Tiếp tục".',
@@ -291,7 +292,6 @@ export const viText = {
     noZoneBarHold: (detail: string) =>
       `Không vẽ thanh vùng vì giữ hàng lợi hơn bán ở giá sale${detail ? ` (${detail})` : ''}: về tiền, tạm dừng luôn hơn tiếp tục.`,
     noZoneBarBlocked: 'Chưa có thanh vùng vì chưa so sánh được các hành động.',
-    goalTarget: (n: number) => `mục tiêu ${formatNumber(n, 0)} sp`,
     campaignName: (name: string) => `Chiến dịch: ${name}`,
     infeasibleIfAllowed: (v: string) => `Nếu bỏ ràng buộc: ${v}`,
     duplicateOf: (other: string) => `Kết quả trùng hệt ${other}`,

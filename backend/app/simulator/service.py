@@ -6,8 +6,12 @@
 ``scenarios`` / ``scenario_results`` / ``recommendations``.
 
 Results are cached in memory by ``(campaign_id, forecast_ids, estimate_id, param_version,
-goal_id, as_of, start, horizon, actions, overrides, samples, seed)`` (05 §5.5, 06 §3);
+goal_id, as_of, start, horizon, actions, overrides, samples, seed, session_id)`` (05 §5.5, 06 §3);
 a hit returns the stored output with ``cache_hit = True`` and writes nothing.
+
+A **what-if** run (:func:`is_what_if`: ``param_overrides``, ``session_id`` or an action list
+other than the default one) is persisted for ``GET /scenarios/{id}`` but its recommendation
+never replaces the campaign's active one: only a standard run supersedes (sửa lỗi nhỏ M3).
 """
 
 from __future__ import annotations
@@ -50,6 +54,23 @@ def default_action_list(inp: SimInputs) -> list[ActionSpec]:
     )
 
 
+def is_what_if(
+    req: SimRequest, actions: Sequence[ActionSpec], default: Sequence[ActionSpec]
+) -> bool:
+    """A run is a what-if when it changes an assumption (``param_overrides``, session
+    parameters) or compares its own set of actions; the standard run of the campaign uses
+    the stored parameters and the default actions (``actions = null``)."""
+    if req.param_overrides or req.session_id is not None:
+        return True
+    return {a.key for a in actions} != {a.key for a in default}
+
+
+def request_as_run(req: SimRequest, inp: SimInputs) -> SimRequest:
+    """The request echoed back: ``start`` / ``horizon_hours`` resolved (UTC), the rest as
+    sent. Re-sending it gives the same cache key."""
+    return req.model_copy(update={"start": to_utc(inp.start), "horizon_hours": inp.T})
+
+
 def _key(inp: SimInputs, req: SimRequest, actions: Sequence[ActionSpec]) -> str:
     return engine.cache_key(
         [
@@ -66,6 +87,7 @@ def _key(inp: SimInputs, req: SimRequest, actions: Sequence[ActionSpec]) -> str:
             tuple(sorted((k, repr(v)) for k, v in inp.params.overrides.items())),
             req.samples,
             req.seed,
+            req.session_id,  # session runs are what-ifs (never the active recommendation)
         ]
     )
 
@@ -115,7 +137,9 @@ def run_simulation(
         )
         rec.scenario_id = out.scenario_id
         return out
-    actions = list(req.actions) if req.actions else default_action_list(inp)
+    default = default_action_list(inp)
+    actions = list(req.actions) if req.actions else default
+    what_if = is_what_if(req, actions, default)
     key = _key(inp, req, actions)
     if use_cache:
         hit = engine.cache_get(key)
@@ -139,6 +163,7 @@ def run_simulation(
         results=results,
         recommendation=rec,
         input_hash=key,
+        what_if=what_if,
         timings_ms={
             "load": (t_load - t0) * 1e3,
             "simulate": (t_sim - t_load) * 1e3,
@@ -155,6 +180,8 @@ def run_simulation(
             samples=req.samples,
             seed=req.seed,
             requested_by=requested_by,
+            request_json=request_as_run(req, inp).model_dump_json(),
+            what_if=what_if,
         )
         if ev is not None and events is not None:
             events.append(ev)
