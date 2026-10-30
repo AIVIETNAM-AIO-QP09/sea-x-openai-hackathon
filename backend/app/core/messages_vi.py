@@ -64,3 +64,7 @@ LIVE_RESTARTED = " (phát lại chạy lại từ đầu: đã xóa dữ liệu 
 LIVE_TICK = "Dữ liệu tới: đơn hàng và tồn {orders}, ads {ads}."
 PANEL_REBUILT = "Đã dựng lại hourly_panel: {rows} dòng, {skus} SKU, {ms} ms."
 EVAL_RUNNING = "Chạy chấm điểm: {cmd}"
+BACKTEST_DONE = (
+    "Backtest xong: {scores} dòng điểm, {champions} champion (nhóm × bối cảnh), {s:.1f} giây."
+)
+FIT_DONE = "Dự báo xong {n} SKU ({horizon} giờ tới). Nhãn tin cậy: {labels}."

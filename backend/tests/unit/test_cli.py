@@ -38,8 +38,6 @@ def test_reset_yes(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "task"),
     [
-        (["backtest"], "FC-09"),
-        (["fit"], "FC-09"),
         (["estimate-ads"], "ADS-06"),
     ],
 )

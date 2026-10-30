@@ -277,15 +277,43 @@ def _todo(command: str, task: str, plan: str) -> NoReturn:
 
 
 @cli.command()
-def backtest() -> None:
+def backtest(db: DbOpt = None) -> None:
     """Chạy backtest 6 mốc, ghi model_scores, chọn champion."""
-    _todo("backtest", "FC-09", "docs/dev-plan/03-lop-mo-hinh.md §7")
+    from app.forecast.service import run_backtests
+
+    database = _db(db)
+    database.migrate()
+    res = run_backtests(database.write)
+    typer.echo(
+        vi.BACKTEST_DONE.format(
+            scores=_n(len(res.scores)), champions=len(res.champions), s=res.seconds
+        )
+    )
+    database.close()
 
 
 @cli.command()
-def fit() -> None:
-    """Fit lô dự báo cho mọi SKU (job hằng đêm)."""
-    _todo("fit", "FC-09, ORC-03", "docs/dev-plan/06-dieu-phoi-va-hieu-nang.md §3")
+def fit(
+    db: DbOpt = None,
+    horizon: Annotated[int, typer.Option(help="Số giờ dự báo tới.")] = 72,
+) -> None:
+    """Dự báo cho mọi SKU từ cuối dữ liệu đã nạp, ghi bảng forecasts (cần chạy backtest trước)."""
+    from collections import Counter
+
+    from app.forecast.service import forecast_skus
+
+    database = _db(db)
+    database.migrate()
+    results = forecast_skus(database.write, horizon_hours=horizon)
+    labels = Counter(str(r.confidence) for r in results)
+    typer.echo(
+        vi.FIT_DONE.format(
+            n=len(results),
+            horizon=horizon,
+            labels=", ".join(f"{k} {v}" for k, v in sorted(labels.items())),
+        )
+    )
+    database.close()
 
 
 @cli.command("estimate-ads")
@@ -297,14 +325,34 @@ def estimate_ads() -> None:
 @cli.command("eval")
 def eval_(
     size: Annotated[str, typer.Option("--size", help="Cỡ mock-data: nho | demo.")] = "demo",
+    kind: Annotated[
+        str, typer.Option("--kind", help="data | forecast | all: lớp cần chấm.")
+    ] = "data",
     live_hours: Annotated[int, typer.Option(help="Số giờ live 11.11 để đo thời gian.")] = 3,
 ) -> None:
-    """Chấm lớp dữ liệu bằng đáp án (chạy ``python -m eval.eval_data`` ở tiến trình
-    riêng: code trong app/ không import eval/)."""
+    """Chấm bằng đáp án (chạy ``python -m eval.…`` ở tiến trình riêng: code trong app/
+    không import eval/)."""
     backend_dir = Path(__file__).resolve().parents[1]
-    cmd = [sys.executable, "-m", "eval.eval_data", "--size", size, "--live-hours", str(live_hours)]
-    typer.echo(vi.EVAL_RUNNING.format(cmd=" ".join(cmd[1:])))
-    raise typer.Exit(subprocess.call(cmd, cwd=backend_dir))
+    cmds = {
+        "data": [
+            sys.executable,
+            "-m",
+            "eval.eval_data",
+            "--size",
+            size,
+            "--live-hours",
+            str(live_hours),
+        ],
+        "forecast": [sys.executable, "-m", "eval.eval_forecast", "--size", size],
+    }
+    if kind not in (*cmds, "all"):
+        raise typer.BadParameter("--kind phải là data, forecast hoặc all")
+    code = 0
+    for name in cmds if kind == "all" else (kind,):
+        cmd = cmds[name]
+        typer.echo(vi.EVAL_RUNNING.format(cmd=" ".join(cmd[1:])))
+        code = code or subprocess.call(cmd, cwd=backend_dir)
+    raise typer.Exit(code)
 
 
 def _utf8_console() -> None:
