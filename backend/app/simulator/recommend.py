@@ -28,7 +28,13 @@ from app.core.events import RecommendationChanged
 from app.core.ids import new_id
 from app.core.money import format_vnd
 from app.core.timeutil import to_local, utcnow
-from app.economics.breakeven import bisect_sign_change, linear_root, make_zone_bar
+from app.economics.breakeven import (
+    BreakevenRequest,
+    bisect_sign_change,
+    linear_root,
+    make_zone_bar,
+    uniform_breakeven,
+)
 from app.economics.goals import Outcome, Selection, select_actions
 from app.simulator.constraints import MUST_RUN
 from app.simulator.engine import ActionRun, Perturb, SimRun, stockout_hour
@@ -194,7 +200,46 @@ def zone_bar(run: SimRun, resim: Resim) -> tuple[ZoneBar | None, str | None]:
             f"Giữ hàng lợi hơn bán: mỗi sp còn lại đáng {format_vnd(round(v_bar))},"
             f" bán chỉ lãi {format_vnd(round(m_bar))}"
         )
+    if bar is not None:
+        bar.inputs = uniform_inputs(
+            bar, pi_c, n, float(inp.T), m_bar, v_bar, sold_c, float(np.mean(p.spend))
+        )
     return bar, None
+
+
+def uniform_inputs(
+    bar: ZoneBar,
+    pi_c: float,
+    n: float,
+    hours: float,
+    m: float,
+    v: float,
+    sold_c: float,
+    spend_p: float,
+) -> BreakevenRequest | None:
+    """[DEV] Uniform case (body of ``POST /scenarios/breakeven``) equivalent to the simulated
+    bar: continue sells ``sold_c`` evenly over ``hours`` and spends ``s``/hour, with ``s``
+    chosen so that ``Π_c`` matches the simulation. Exact only when pause spends nothing and
+    ``s ≥ 0``; returned only if it reproduces ``bar.threshold`` (else ``None``)."""
+    if abs(spend_p) >= 0.5 or hours <= 0 or not 0 <= sold_c <= n:
+        return None
+    s = (m * sold_c + v * (n - sold_c) - pi_c) / hours
+    if s < 0:
+        return None
+    req = BreakevenRequest(
+        units_left=n,
+        hours_left=hours,
+        contribution_per_unit_vnd=m,
+        spend_per_hour_vnd=s,
+        rate_continue_per_hour=sold_c / hours,
+        pause_rate_interval=bar.interval,
+        leftover_value_per_unit_vnd=v,
+        alt_leftover_values=[0.0] if v > 0 else [20_000.0],
+    )
+    check = uniform_breakeven(req.case()).zone_bar
+    if check is None or abs(check.threshold - bar.threshold) > 1e-6 * max(1.0, bar.threshold):
+        return None
+    return req
 
 
 # ---------------------------------------------------------------------- sensitivity

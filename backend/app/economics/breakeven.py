@@ -26,7 +26,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.money import format_vnd
 
@@ -42,12 +42,43 @@ class AltThreshold(BaseModel):
     status: BreakevenStatus = "ok"
 
 
+class BreakevenRequest(BaseModel):
+    """Body of ``POST /scenarios/breakeven`` (08 §3.8) = uniform case of 05 §7.1.
+
+    Also carried by :attr:`ZoneBar.inputs` so the browser can redraw the bar while a slider
+    moves (``web/src/lib/breakeven.ts`` uses the same formula, decision log M3-web §2)."""
+
+    units_left: float = Field(gt=0)
+    hours_left: float = Field(gt=0)
+    contribution_per_unit_vnd: float
+    spend_per_hour_vnd: float
+    rate_continue_per_hour: float = Field(ge=0)
+    pause_rate_interval: tuple[float, float, float]
+    leftover_value_per_unit_vnd: float = Field(default=0.0, ge=0)
+    alt_leftover_values: list[float] = Field(default_factory=lambda: [20_000.0])
+
+    def case(self) -> UniformCase:
+        return UniformCase(
+            units_left=self.units_left,
+            hours_left=self.hours_left,
+            contribution_per_unit_vnd=self.contribution_per_unit_vnd,
+            spend_per_hour_vnd=self.spend_per_hour_vnd,
+            rate_continue_per_hour=self.rate_continue_per_hour,
+            pause_rate_interval=self.pause_rate_interval,
+            leftover_value_per_unit_vnd=self.leftover_value_per_unit_vnd,
+            alt_leftover_values=tuple(self.alt_leftover_values),
+        )
+
+
 class ZoneBar(BaseModel):
     axis_label: str = AXIS_LABEL
     threshold: float  # x*
     interval: tuple[float, float, float]  # p10, p50, p90 of the pause selling rate
     verdict: Verdict
     alt_thresholds: list[AltThreshold] = []
+    # [DEV] uniform-case inputs that reproduce ``threshold`` exactly (M3-web §2); None when
+    # the simulated bar has no exact uniform equivalent (pause still spends, ...)
+    inputs: BreakevenRequest | None = None
 
 
 @dataclass(frozen=True)

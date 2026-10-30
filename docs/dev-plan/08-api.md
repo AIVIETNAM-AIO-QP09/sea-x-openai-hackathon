@@ -554,6 +554,24 @@ Frontend dùng `EventSource` + map event → `queryClient.invalidateQueries(...)
 
 ---
 
+## 6. Ghi chú triển khai (M3, API đợt 2)
+
+Đã làm API-01, API-03 (phần sàn), API-04, API-05, ECO-02. Chi tiết, lý do và ví dụ phản hồi thật nằm ở [docs/quyet-dinh/M3-api.md](../quyet-dinh/M3-api.md). Những thay đổi so với mục 1–3 (đều là thêm, không phá vỡ):
+
+- **Xác thực:** thiếu `X-Role` thì tính là `viewer`; `X-Role` lạ trả 401.
+- **Phân trang:** danh sách trả `{data: [...], meta, next_cursor}`. `meta` có thêm `cache_hit` (chỉ dùng ở `/scenarios/run`). `Source` có thêm `data_as_of`, `tool`, `href`.
+- **`/freshness`:** thêm `clock`. `DEMO_MODE` dùng đồng hồ dữ liệu, `?now=` để so với mốc khác.
+- **Đường dẫn bí danh:** `PUT` và `PATCH /skus/{sku}/demand-group`; `/forecast/scores` = `/models/scores`; `POST /goals` cùng `PUT /goals/{scope}/{scope_id}`; `GET /goals/{goal_id}`; `POST /parameters/{key}/confirm` (xác nhận giá trị AI gợi ý); `/data-quality` (tóm tắt) cùng `/data-quality/issues`; panel nhận `start/end` hoặc `from/to`, và `grain=day`.
+- **`/scenarios/run`:**
+  - `goal_id` không bắt buộc: thiếu thì dùng mục tiêu đang hiệu lực, không có thì 422 `BLOCKING_DATA_ISSUE`.
+  - Thêm `disable_skus` cho what-if "tắt riêng SKU": 409 `CONSTRAINT_VIOLATION` khi ngân sách dùng chung.
+  - Thiếu giá vốn → 422.
+  - Phản hồi `ScenarioRun` có `request` (đã điền `start`, `horizon_hours`), `results[].key/label`, `recommendation.reason_sources[]`, `best_label`, `active`.
+  - `zone_bar.inputs` (= body `/scenarios/breakeven`) chỉ có khi tái tạo đúng ngưỡng.
+- **`/scenarios/breakeven`:** thêm `pi_continue_vnd`, `status`, `q_star_units`, `reason`. Body nhận `alt_leftover_values`.
+- **`/campaigns/{id}`:** thêm `price_max_vnd` (max thanh trượt V), `sku_detail`, `goal`, `commitments`. `/campaigns/{id}/iroas` có `iroas.p50` = trung bình hậu nghiệm.
+- **`/ingest/files`:** nạp trực tiếp (chưa có bước AI ghép cột), `status` ∈ `loaded | needs_sku_review | skipped | failed | unsupported`. `POST /ingest/batches/{id}/confirm` nạp lại file sau khi chốt alias.
+
 ## Tiêu chí hoàn thành
 
 - [ ] Mọi endpoint ở bảng mục 2 có router, schema Pydantic, kiểm vai trò.
