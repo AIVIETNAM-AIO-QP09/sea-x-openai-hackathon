@@ -104,3 +104,5 @@ markers = [
     "integration: needs mock-data/out/nho",
     "e2e: needs mock-data/out/demo",
 ]
+# DuckDB's DataFrame export calls DataFrame.drop(inplace=…), deprecated in pandas 3.1.
+filterwarnings = ["ignore:The inplace keyword in DataFrame.drop is deprecated"]

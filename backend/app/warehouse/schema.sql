@@ -265,10 +265,12 @@ CREATE TABLE IF NOT EXISTS model_scores (
   pinball_10   DOUBLE,
   pinball_50   DOUBLE,
   pinball_90   DOUBLE,
-  coverage     DOUBLE,
+  coverage     DOUBLE,                   -- randomised-PIT coverage of the 80 % interval (M2)
   is_champion  BOOLEAN NOT NULL DEFAULT FALSE,
   panel_version VARCHAR NOT NULL,
-  created_at   TIMESTAMPTZ NOT NULL
+  created_at   TIMESTAMPTZ NOT NULL,
+  wape_floor   DOUBLE                    -- [DEV] M2: expected WAPE under the model's own
+                                         --       predictive distribution (03 §7.2, §7.3)
 );
 
 CREATE TABLE IF NOT EXISTS forecasts (

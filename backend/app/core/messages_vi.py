@@ -38,3 +38,33 @@ LABEL_SCENARIO = "Kịch bản"
 # ------------------------------------------------------------------ health
 HEALTH_OK = "Hệ thống hoạt động bình thường."
 HEALTH_DEGRADED = "Một số thành phần đang lỗi."
+
+# ------------------------------------------------------------------ ingest (CLI summary)
+INGEST_DONE = (
+    "Đã nạp {loaded}/{total} file từ {path} trong {seconds} giây "
+    "(bỏ qua {skipped} file đã nạp trước đó)."
+)
+INGEST_NOTHING_NEW = (
+    "Không có file mới trong {path}: mọi file đã được nạp (dùng --force để nạp lại)."
+)
+INGEST_FILE_LINE = "  {name:34s} {source:13s} {status:15s} {rows:>9s} dòng  {ms:>7s} ms{extra}"
+INGEST_FILE_HELD = "  · {n} dòng chờ xác nhận SKU"
+INGEST_TABLES = "Số dòng mỗi bảng:"
+INGEST_ALIASES = (
+    "Ghép SKU: {auto} tự động, {confirmed} đã xác nhận, {pending} chờ xác nhận ({detail})."
+)
+INGEST_ISSUES = "Vấn đề dữ liệu theo mã:"
+INGEST_NO_ISSUES = "Không có vấn đề dữ liệu nào."
+INGEST_PANEL = "hourly_panel: ghi {rows} dòng cho {skus} SKU trong {ms} ms."
+INGEST_TIMINGS = "Thời gian từng bước (ms): {detail}"
+LIVE_UNCHANGED = "Dữ liệu live trong {path} chưa đổi so với lần nạp trước."
+LIVE_EMPTY = "Không có dòng live mới trong {path}."
+LIVE_DONE = "Đã nạp phần live mới trong {seconds} giây: {detail}{restart}."
+LIVE_RESTARTED = " (phát lại chạy lại từ đầu: đã xóa dữ liệu live cũ)"
+LIVE_TICK = "Dữ liệu tới: đơn hàng và tồn {orders}, ads {ads}."
+PANEL_REBUILT = "Đã dựng lại hourly_panel: {rows} dòng, {skus} SKU, {ms} ms."
+EVAL_RUNNING = "Chạy chấm điểm: {cmd}"
+BACKTEST_DONE = (
+    "Backtest xong: {scores} dòng điểm, {champions} champion (nhóm × bối cảnh), {s:.1f} giây."
+)
+FIT_DONE = "Dự báo xong {n} SKU ({horizon} giờ tới). Nhãn tin cậy: {labels}."

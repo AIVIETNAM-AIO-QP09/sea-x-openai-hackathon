@@ -14,10 +14,21 @@ Trợ lý ra quyết định quảng cáo cho người vận hành shop trên Sh
 | Plan kỹ thuật đầy đủ (14 file) | Có | [docs/dev-plan/](docs/dev-plan/README.md) |
 | Bộ sinh dữ liệu giả lập có đáp án | Có, chạy được | [mock-data/](mock-data/README.md) |
 | Dữ liệu đã sinh sẵn (cỡ `nho` và `demo`, seed 20261111) | Có | `mock-data/out/` |
-| Backend: khung M0 (FastAPI, DuckDB đủ bảng, `/api/v1/health`, CLI, 100 test) | Có | [backend/](backend/README.md) |
+| Backend: khung M0 (FastAPI, DuckDB đủ bảng, `/api/v1/health`, CLI) | Có | [backend/](backend/README.md) |
 | Frontend: khung M0 (React, router, 8 màn, chế độ fixture, 24 test) | Có | [web/](web/README.md) |
 | CI một cổng `ci` (backend, web, kiểm bộ sinh dữ liệu) | Có | [.github/workflows/ci.yml](.github/workflows/ci.yml) |
-| M1 · Lớp dữ liệu (adapter, ghép SKU, panel) | Tiếp theo | `backend/app/ingest`, `backend/app/panel` |
+| M1 · Lớp dữ liệu: adapter 7 loại file, bỏ PII, ghép SKU 3 nguồn, kiểm 12 lỗi cài sẵn, `hourly_panel`, pipeline `ingest` + nạp live theo giờ, chấm điểm `eval_data` | Xong phần chính (chấm trên `demo` bên dưới) | `backend/app/ingest`, `backend/app/panel`, `backend/eval/eval_data.py`, [nhật ký](docs/quyet-dinh/M1-pipeline.md) |
+
+Kết quả chấm lớp dữ liệu trên `demo` (`uv run python -m eval.eval_data --size demo`, dữ liệu mô phỏng, seed 20261111):
+
+| Tiêu chí M1 | Kết quả | Ngưỡng |
+|---|---|---|
+| Nạp 6 file lịch sử | 11,8–12,8 giây (thêm 3,1 giây cho cả ngày live 11.11) | < 60 giây |
+| Ghép SKU tự động đúng / sai | 97,1 % / 0 % trên mã nội bộ + giá vốn (98,1 % trên cả 3 nguồn); 17 alias giá vốn chờ xác nhận | ≥ 90 % / ≤ 1 % |
+| Lỗi cài sẵn bắt được | 12/12 | 12/12 |
+| `hourly_panel` | 300 SKU × 2.880 giờ | 300 × 2.880 |
+| PII trong DuckDB | 0 | 0 |
+| Nạp 1 giờ live (PNL-04) | 2,2–2,5 giây khi máy rảnh, tới 7,5 giây khi máy bận; panel chiếm phần lớn, hướng tối ưu ở nhật ký §14 | < 5 giây |
 
 ## Kiến trúc tóm tắt
 

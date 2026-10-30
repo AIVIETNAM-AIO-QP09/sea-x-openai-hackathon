@@ -305,7 +305,7 @@ Viết bằng JSON Schema để đưa thẳng vào `tools=[...]`. Định nghĩa
 { "name": "check_data_quality",
   "description": "Liệt kê vấn đề dữ liệu đang mở (thiếu giá vốn, tồn âm, ads trễ, đơn trùng...) cho một SKU hoặc cả shop.",
   "parameters": {"type":"object","properties":{"sku":{"type":"string"},"severity":{"type":"string","enum":["any","blocking"]}},"additionalProperties":false} }
-// kết quả: {"issues":[{"id":"dq-17","kind":"missing_cost","sku":"KHANLAU-G3","blocking":true,"message":"Thiếu giá vốn, chưa tính được lợi nhuận"}],"source":{...}}
+// kết quả: {"issues":[{"id":"dq-17","kind":"MISSING_COST","sku":"KHANLAU-G3","blocking":true,"message":"Thiếu giá vốn, chưa tính được lợi nhuận"}],"source":{...}}
 
 // get_campaign_status: {campaign_id} → giờ bật/tắt/hết ngân sách 24h gần nhất, chi còn lại, ads_as_of
 // get_price_events: {sku, from, to} → đổi giá, voucher

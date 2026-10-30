@@ -239,18 +239,18 @@ Module: `backend/app/api/` (một router mỗi nhóm), schema Pydantic trong `ba
 ```json
 {
   "data": [
-    {"id": "dq-17", "kind": "missing_cost", "severity": "blocking", "sku": "KHANLAU-G3",
+    {"id": "dq-17", "kind": "MISSING_COST", "severity": "blocking", "sku": "KHANLAU-G3",
      "message": "Thiếu giá vốn, chưa tính được lợi nhuận", "batch_id": "ib-41", "detected_at": "..."},
-    {"id": "dq-18", "kind": "negative_stock", "severity": "warning", "sku": "THAM-XANH",
+    {"id": "dq-18", "kind": "NEG_STOCK", "severity": "warning", "sku": "THAM-XANH",
      "message": "Tồn ngày 2026-09-03 là -7, đã bỏ qua dòng này", "batch_id": "ib-42"},
-    {"id": "dq-19", "kind": "ads_timezone_shift", "severity": "info",
+    {"id": "dq-19", "kind": "ADS_TZ_SHIFT", "severity": "info",
      "message": "File ads ghi giờ UTC, đã đổi về giờ Việt Nam (+7)", "batch_id": "ib-40"}
   ],
   "next_cursor": null
 }
 ```
 
-`kind` gồm: `missing_cost, negative_stock, duplicate_orders, ads_timezone_shift, ads_missing_day, ads_lag, unmatched_sku, pending_status, combo_without_stock_row, pii_dropped, possible_instruction_in_note, money_format_mixed`.
+`kind` = `data_quality_issues.code`, đúng mã của [02 §3.1](02-lop-du-lieu.md): `MISSING_COST, NEG_STOCK, DUP_ORDER, ADS_TZ_SHIFT, ADS_GAP_DAY, ADS_LAG, UNMATCHED_SKU, PROVISIONAL_STATUS, BUNDLE_NO_STOCK_ROW, PII_DROPPED, SUSPICIOUS_NOTE, MONEY_FORMAT, STOCK_JUMP, STOCK_ADJUSTMENT, SPEND_OVER_BUDGET, ORDER_TOTAL_MISMATCH, COST_NOTE_REVIEW, UNKNOWN_SOURCE, UNPARSED_RULE` và 4 mã adapter `ROW_INVALID, UNKNOWN_STATUS, DUP_ROW, MISSING_COLUMNS` (docs/quyet-dinh/M1-adapter.md §4). `severity` của API: `error` trong DB → `blocking`, `warn` → `warning`, `info` → `info`.
 
 ### 3.4 SKU
 

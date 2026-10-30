@@ -204,23 +204,34 @@ Với `y` = thực tế, `ŷ` = p50, tổng trên tập (SKU, giờ) của một
 WAPE      = Σ|y − ŷ| / Σ y                         (hạt SKU × ngày: cộng giờ trong ngày trước)
 Bias      = (Σŷ − Σy) / Σy
 Pinball_q = mean( max(q·(y − ŷ_q), (q − 1)·(y − ŷ_q)) ),  q ∈ {0,1; 0,5; 0,9}   (hạt giờ)
-Coverage  = tỷ lệ (SKU, ngày) có y ∈ [cum_p10, cum_p90] của tổng ngày        (mục tiêu 80%)
+Coverage  = tỷ lệ (SKU, ngày) có PIT ngẫu nhiên hóa của tổng ngày u ∈ [0,1; 0,9]   (mục tiêu 80%)
+            u = F(y−1) + V·(F(y) − F(y−1)),  V ~ U(0, 1) có seed,  F = phân phối dự báo của tổng ngày
+WAPE_floor = Σ E|Y − p50_Y| / Σ E[Y],  Y ~ NegBin(mean dự báo, k) theo giờ, cộng thành ngày
+             (Monte Carlo có seed, KHÔNG gồm level_sigma), trên đúng tập (SKU, ngày) của WAPE
 ```
 
-Tính theo `(model, nhóm nhu cầu, bối cảnh)`. Chỉ tính SKU có ≥ 1 sp/ngày cho WAPE (SKU thưa dùng pinball).
+Tính theo `(model, nhóm nhu cầu, bối cảnh)`. Chỉ tính SKU có ≥ 1 sp/ngày cho WAPE và WAPE_floor (SKU thưa dùng pinball). Trong app, mọi đại lượng tính trên giờ còn hàng (§7.1) và không đọc đáp án.
+
+**Vì sao đổi (M2, nhật ký `M2-du-bao.md` §D).** Cách đo cũ cho sai kết luận trên số đếm nhỏ: (1) `y ∈ [p10, p90]` đếm trọn khối xác suất ở hai mép, nên ngay cả phân phối **đúng** cũng phủ ≈ 90% (thử bằng λ thật của bộ sinh: 86–91%); PIT ngẫu nhiên hóa cho đúng 80% khi phân phối đúng. (2) "WAPE ≤ 30%" là ngưỡng tuyệt đối, nhưng nhiễu Poisson/NegBin của SKU 2–10 sp/ngày đã là ~29–35% WAPE (dự báo bằng λ thật trên `demo`: 35%); WAPE_floor là phần sai không tránh được, do app tự tính từ dự báo của mình. `level_sigma` không nằm trong floor: đó là độ mơ hồ của chính model, đưa vào thì model càng mơ hồ ngưỡng càng dễ (thử nghiệm: dự báo ×1,5 qua được ngày 10.10).
 
 ### 7.3 Nhãn tin cậy (`forecast/labels.py`)
 
 ```python
+WAPE_FLOOR_TOL = 0.10   # WAPE được vượt mức sai không tránh được tối đa 10% (baseline ngây thơ phải trượt)
+
 def confidence_label(scope: ScoreRow | None, history_days: int, drift_active: bool) -> Label:
     if history_days < 14 or scope is None:
         return "scenario"
-    ok = scope.wape <= 0.30 and 0.72 <= scope.coverage <= 0.88 and scope.n_sku_days >= 30
+    ok = (scope.wape <= (1 + WAPE_FLOOR_TOL) * scope.wape_floor   # §7.2
+          and 0.72 <= scope.coverage <= 0.88                       # coverage PIT, §7.2
+          and scope.n_sku_days >= 30)
     label = "verified" if ok else "reference"
     if drift_active and label == "verified":
         label = "reference"
     return label
 ```
+
+`model_scores.wape_floor` lưu WAPE_floor của từng dòng điểm. Làm khoảng dự báo rộng ra không giúp qua nhãn: floor không đổi (không gồm `level_sigma`) mà coverage PIT vượt 0,88.
 
 `scope` = điểm của champion trên **cùng nhóm + cùng bối cảnh** với yêu cầu. 11.11 có bối cảnh `double_day`, nên dùng điểm `dd_*`, không dùng điểm ngày thường. Không có điểm cho đúng bối cảnh thì mặc định `reference`, kèm lý do "chưa kiểm ở bối cảnh này".
 
@@ -296,9 +307,10 @@ Kỳ vọng trên demo:
 
 | Kiểm tra | Cách tính | Ngưỡng |
 |---|---|---|
-| WAPE ngày thường | `normal_roll`, nhóm `on_dinh`, champion, so với `nhu_cau_that` | ≤ 30% |
+| WAPE ngày thường | `normal_roll`, nhóm `on_dinh`, champion, so với `nhu_cau_that` | WAPE ≤ 1,10 × WAPE_floor (§7.2) |
+| Phép thử cách đo | Oracle = λ thật của bộ sinh với NegBin k = 3; dự báo kém có chủ đích (champion ×1,5; baseline 7 ngày cùng giờ) | Oracle đạt cả WAPE/floor lẫn coverage PIT; WAPE_floor của app cách WAPE oracle ≤ 5 điểm; dự báo kém trượt |
 | WAPE 10.10 | `dd_1010`, nhóm `on_dinh` + `mua_vu` | ≤ 40% (ghi số thật lên slide) |
-| Coverage | `cum_p10..p90` theo ngày, `normal_roll` | 72–88% |
+| Coverage | PIT ngẫu nhiên hóa của tổng ngày (§7.2), `normal_roll` | 72–88% (in kèm số đo cũ `y ∈ [p10, p90]` để so) |
 | Censoring | SKU có ≥ 5 giờ hết hàng trong `dd_1010`: `|bias|` bản hiệu chỉnh vs bản không hiệu chỉnh | Bản hiệu chỉnh `|bias|` ≤ 10%; bản không hiệu chỉnh âm rõ (in số thật cho slide) |
 | So với chấm bằng `ban_duoc` | Cùng model, chấm với `ban_duoc` thay vì `nhu_cau_that` | Báo cáo chênh lệch: chứng minh "chấm bằng số bán đánh giá sai model" |
 | Baseline | Champion so với "trung bình 7 ngày cùng giờ" (seasonal naive) | Champion tốt hơn ≥ 15% WAPE |

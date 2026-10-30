@@ -19,7 +19,8 @@ uv run python -m eval.run_all --size demo --only ingest,forecast   # chạy mộ
 |---|---|---|
 | `__init__.py` | Đường dẫn dùng chung: `mock_dir(size)`, `ground_truth_dir(size)`, `REPORTS_DIR` | INF-06 (đã có) |
 | `run_all.py` | Gọi lần lượt các phần, gộp báo cáo `.md` + `.json` | EVAL-02 |
-| `eval_data.py` | (1) Ghép SKU, (2) bắt 12 lỗi cài sẵn (02 §8) | EVAL-02 / EVD-01 |
+| `eval_data.py` | (1) Ghép SKU, (2) bắt 12 lỗi cài sẵn, số bán/tồn/hết hàng của panel, PII, thời gian nạp lịch sử và từng giờ live (02 §8). **Đã có**: `uv run python -m eval.eval_data --size demo` | EVAL-02 / EVD-01 |
+| `live_replay.py` | Bản Python của một bước `replay.js` (ghi `live_stream/` vào thư mục tạm), dùng cho test và đo PNL-04 | M1 |
 | `eval_forecast.py` | (3) WAPE, bias, coverage, pinball, lệch do hết hàng (03 §10) | EVAL-02 / EVF-01 |
 | `eval_ads.py` | (4) iROAS so với `chien_dich_that.csv`, câu cho slide | EVAL-07 |
 | `eval_decision.py` | (5) Regret, cần chế độ `--policy` của mock-data | EVAL-03 |

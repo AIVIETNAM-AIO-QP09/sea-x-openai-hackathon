@@ -21,7 +21,7 @@ Bảng ở file này là **nguồn chính** về người phụ trách, ưu tiê
 |---|---|---|---|
 | M0 | Khung dự án | Ngày 1 | `make dev` chạy backend + frontend; CI chạy pytest + npm test + test chống rò `ground_truth`; DuckDB migrate tạo đủ bảng; mock `nho` và `demo` sinh được trên mọi máy (Windows) |
 | M1 | Dữ liệu sạch | Ngày 4 | Import đủ 7 file cỡ `demo` < 60 giây; `eval_data.py`: ghép SKU tự động ≥ 90%, sai ≤ 1%, bắt 12/12 lỗi cài sẵn; `hourly_panel` có 300 SKU × 2.880 giờ; không còn PII trong DuckDB |
-| M2 | Dự báo và chấm điểm | Ngày 6 | `eval_forecast.py`: champion tốt hơn baseline ngây thơ ≥ 15% WAPE trên 10.10; coverage 80% trong [0,72; 0,88]; mọi SKU có nhãn tin cậy |
+| M2 | Dự báo và chấm điểm | Ngày 6 | `eval_forecast.py`: champion tốt hơn baseline ngây thơ ≥ 15% WAPE trên 10.10; coverage 80% (PIT ngẫu nhiên hóa, 03 §7.2) trong [0,72; 0,88]; mọi SKU có nhãn tin cậy (luật WAPE ≤ 1,10 × WAPE_floor, 03 §7.3) |
 | M3 | Quyết định | Ngày 8 | `POST /scenarios/run` < 1 giây (5 hành động, 1.000 mẫu); ví dụ trang 10 ra 22,5 / 16,5 / 16.875đ; e2e `test_noichien_1111.py` xanh (`schedule_hours` thắng, `pause` bị `campaign_must_run`); `eval_ads.py`: iROAS sai số trung vị ≤ 25%, gần thật hơn ROAS sàn ở ≥ 80% chiến dịch; màn So sánh chạy với dữ liệu thật |
 | M4 | AI và live | Ngày 9 | Replay 11.11 chạy, mọi chiến dịch bị chạm được tính lại < 5 phút mỗi tick; cảnh báo size M và bình nước hiện đúng; what-if "hàng về sớm 1 ngày" lật kết luận CD002; agent điều tra size M đúng nguyên nhân; grounding 100%; test injection đạt; có bản ghi `AI_MODE=record` cho kịch bản |
 | M5 | Demo | Ngày 10 | Kịch bản diễn tập 10 bước (11-kiem-thu-va-cham-diem mục 5) đạt 2 lần liên tiếp; có video dự phòng; slide có số từ báo cáo chấm điểm |

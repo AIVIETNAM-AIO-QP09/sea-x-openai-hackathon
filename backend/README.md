@@ -63,12 +63,27 @@ Có thể ghép: `uv run python tasks.py fmt check`. `Makefile` chỉ gọi lạ
 | `seed` | có | Nạp khai báo combo mẫu `COMBO-NOICHIEN = NOICHIEN2L + GIAYLOT50` (WH-02) |
 | `tables` | có | Liệt kê bảng và số dòng |
 | `serve [--host --port --reload]` | có | uvicorn `app.main:app` |
-| `ingest --dir` | chưa (ING-01..08, PNL-01) | thoát mã 3, in task phụ trách |
-| `rebuild-panel` | chưa (PNL-01..04) | |
-| `backtest` | chưa (FC-09) | |
+| `ingest --dir DIR [--force] [--no-panel]` | có | Nạp file của shop (mặc định `../mock-data/out/demo`), in tóm tắt: số dòng mỗi bảng, alias chờ xác nhận, vấn đề theo mã, thời gian. Chạy lại cùng thư mục thì bỏ qua file đã nạp (theo SHA-256) |
+| `ingest-live --dir DIR` | có | Nạp phần mới của thư mục live (`live_stream/` của `replay.js`, hoặc `live_11_11/` cả ngày). Gọi lại mỗi khi `trang_thai.json` đổi |
+| `rebuild-panel` | có | Dựng lại toàn bộ `hourly_panel` |
+| `eval [--size demo] [--live-hours 3]` | có | Chạy `python -m eval.eval_data` (tiến trình riêng) |
+| `backtest` | chưa (FC-09) | thoát mã 3, in task phụ trách |
 | `fit` | chưa (FC-09, ORC-03) | |
 | `estimate-ads` | chưa (ADS-06) | |
-| `eval --dir` | chưa (EVAL-02) | |
+
+### Nạp dữ liệu và chấm điểm lớp dữ liệu (M1)
+
+```powershell
+cd backend
+uv run python -m app.cli reset --yes                         # DuckDB trống + seed combo
+uv run python -m app.cli ingest --dir ../mock-data/out/demo  # ~15 giây trên máy dev
+uv run python -m app.cli ingest-live --dir ../mock-data/out/demo/live_11_11   # cả ngày 11.11
+uv run python -m eval.eval_data --size demo                  # hoặc: uv run python -m app.cli eval
+```
+
+Phát lại 11.11 theo giờ: chạy `node replay.js --size demo --interval 20` trong `mock-data/`, rồi gọi `ingest-live --dir ../mock-data/out/demo/live_stream` sau mỗi giờ (LIVE-01 sẽ tự gọi). `eval_data` tạo DuckDB tạm, chạy pipeline thật, so với `ground_truth/` và ghi `eval/reports/data_<cỡ>_<thời điểm>.md` + `.json` (không commit).
+
+Pipeline (`app/ingest/pipeline.py`): nhận diện file theo header → adapter (bỏ PII khi đọc) → ghi `products/skus/orders/order_lines`, `campaigns`, `sale_commitments` → ghép SKU (`sku_matching`) → gán `sku_id` cho tồn/kế hoạch nhập/phiếu nhập/giá vốn (dòng có alias đang chờ thì giữ lại, không ghi) → `ad_hourly`, `inventory_snapshots`, `restock_*`, `cost_items` → `data_quality_issues` (`app/ingest/quality.py`) → `hourly_panel` → `DataUpdated`. Quyết định: [docs/quyet-dinh/M1-pipeline.md](../docs/quyet-dinh/M1-pipeline.md).
 
 ## Cấu trúc
 
@@ -102,6 +117,9 @@ backend/
 | Sự kiện | `app.core.events`: `EventBus`, `DataUpdated`, `RecomputeRequested`, `ForecastUpdated`, `DriftDetected`, `RecommendationChanged`, `AlertRaised`, `DecisionRecorded`, `GoalChanged`, `ParameterChanged`, `StageDone`, `ComputeFailed`, `AlertResolved`, `LiveTick` | Bus ở `app.state.bus`; `subscribe("*", …)` để ghi `event_log` |
 | DB | `app.warehouse.db.get_db()`: `.write` (connection ghi duy nhất), `with db.reader() as cur` | Session `TimeZone='UTC'` |
 | Ghi/đọc | `app.warehouse.repo`: `upsert_rows`, `upsert_df`, `fetch_all`, `fetch_one`, `as_json`, `ensure_sku`, `declare_bundle`, `get_bundle_components`, `seed_bundles` | Upsert theo khóa tự nhiên, idempotent |
+| Nạp dữ liệu | `app.ingest.pipeline`: `ingest_files(conn, dir_or_files, *, force, build_panel, bus) -> IngestReport`, `ingest_live_delta(conn, live_dir, *, bus) -> LiveDeltaReport`, `reset_live_data` | Phát `DataUpdated` (+ `LiveTick`) lên `bus` nếu truyền |
+| Chất lượng dữ liệu | `app.ingest.quality`: `run_cross_source_checks`, `refresh_all`, `write_batch_issues`, `issue_counts` | Mã lỗi theo 02 §3.1, mức ở `adapters.base.ISSUE_SEVERITY` |
+| Dữ liệu test | `tests/conftest.py`: `loaded_db` (connection, `nho` đã nạp + panel, chỉ đọc), `loaded_ingest`; `tests/mockdata.py`: `load_mock(conn, size, live=...)` | Test cần ghi thì tự dựng DB riêng |
 | Chuỗi tiếng Việt | `app.core.messages_vi` | Không viết chuỗi hiển thị rải rác trong code |
 | Log | `app.core.logging.get_logger(__name__)` | JSON; không log PII |
 

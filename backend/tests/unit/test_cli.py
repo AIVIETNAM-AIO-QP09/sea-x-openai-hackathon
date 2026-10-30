@@ -38,12 +38,7 @@ def test_reset_yes(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "task"),
     [
-        (["ingest", "--dir", "x"], "ING-"),
-        (["rebuild-panel"], "PNL-"),
-        (["backtest"], "FC-09"),
-        (["fit"], "FC-09"),
         (["estimate-ads"], "ADS-06"),
-        (["eval"], "EVAL-02"),
     ],
 )
 def test_stub_commands_report_owner_task(args: list[str], task: str) -> None:
@@ -51,3 +46,31 @@ def test_stub_commands_report_owner_task(args: list[str], task: str) -> None:
     assert r.exit_code == EXIT_NOT_IMPLEMENTED
     assert "chưa làm" in r.output
     assert task in r.output
+
+
+@pytest.mark.integration
+def test_ingest_rebuild_panel_and_live(tmp_path: Path) -> None:
+    from tests.mockdata import mock_dir, require
+
+    require("nho")
+    db = tmp_path / "cli.duckdb"
+    assert runner.invoke(cli, ["reset", "--db", str(db), "--yes"]).exit_code == 0
+    r = runner.invoke(cli, ["ingest", "--db", str(db), "--dir", str(mock_dir("nho"))])
+    assert r.exit_code == 0, r.output
+    assert "Đã nạp 6/6 file" in r.output
+    assert "hourly_panel" in r.output and "86.400" in r.output
+    assert "DUP_ORDER" in r.output and "chờ xác nhận" in r.output
+    r = runner.invoke(cli, ["ingest", "--db", str(db), "--dir", str(mock_dir("nho"))])
+    assert r.exit_code == 0 and "Không có file mới" in r.output
+    r = runner.invoke(cli, ["rebuild-panel", "--db", str(db)])
+    assert r.exit_code == 0 and "86.400 dòng" in r.output, r.output
+    r = runner.invoke(
+        cli, ["ingest-live", "--db", str(db), "--dir", str(mock_dir("nho") / "live_11_11")]
+    )
+    assert r.exit_code == 0, r.output
+    assert "Đã nạp phần live mới" in r.output
+
+
+def test_ingest_missing_dir(tmp_path: Path) -> None:
+    r = runner.invoke(cli, ["ingest", "--db", str(tmp_path / "x.duckdb"), "--dir", "nope"])
+    assert r.exit_code != 0
