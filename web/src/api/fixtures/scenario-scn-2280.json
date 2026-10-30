@@ -1,0 +1,76 @@
+{
+  "_note": "Minh họa: CD002 ngày thường 05/11 từ 12:00 tới 24:00, còn 60 nồi chiên, không có cam kết flash sale nên pause làm được.",
+  "data": {
+    "scenario_id": "scn-2280",
+    "request": {
+      "campaign_id": "CD002", "start": "2026-11-05T12:00:00+07:00", "horizon_hours": 12,
+      "goal_id": "goal-shop-profit", "actions": null, "param_overrides": {}, "samples": 1000, "seed": 20261111
+    },
+    "results": [
+      {
+        "action": { "kind": "continue", "pct": null, "windows_local": null }, "feasible": true, "violations": [],
+        "objective": { "mean": 6260000, "p10": 5400000, "p50": 6257000, "p90": 7000000 },
+        "contribution": { "p50": 8057000 }, "spend": { "p50": 1800000 },
+        "units_sold": { "p10": 48, "p50": 54, "p90": 60 }, "leftover_units": { "p50": 6 }, "leftover_value": { "p50": 0 },
+        "stockout_hour_p50": null, "per_sku": []
+      },
+      {
+        "action": { "kind": "pause", "pct": null, "windows_local": null }, "feasible": true, "violations": [],
+        "objective": { "mean": 4300000, "p10": 3220000, "p50": 4297000, "p90": 5550000 },
+        "contribution": { "p50": 4297000 }, "spend": { "p50": 0 },
+        "units_sold": { "p10": 22, "p50": 29, "p90": 37 }, "leftover_units": { "p50": 31 }, "leftover_value": { "p50": 0 },
+        "stockout_hour_p50": null, "per_sku": []
+      },
+      {
+        "action": { "kind": "reduce_budget", "pct": 0.3, "windows_local": null }, "feasible": true, "violations": [],
+        "objective": { "mean": 5750000, "p10": 5050000, "p50": 5752000, "p90": 6400000 },
+        "contribution": { "p50": 7012000 }, "spend": { "p50": 1260000 },
+        "units_sold": { "p10": 41, "p50": 47, "p90": 53 }, "leftover_units": { "p50": 13 }, "leftover_value": { "p50": 0 },
+        "stockout_hour_p50": null, "per_sku": []
+      },
+      {
+        "action": { "kind": "schedule_hours", "pct": null, "windows_local": [[12, 14], [20, 22]] }, "feasible": true, "violations": [],
+        "objective": { "mean": 4920000, "p10": 4200000, "p50": 4920000, "p90": 5600000 },
+        "contribution": { "p50": 5520000 }, "spend": { "p50": 600000 },
+        "units_sold": { "p10": 31, "p50": 37, "p90": 43 }, "leftover_units": { "p50": 23 }, "leftover_value": { "p50": 0 },
+        "stockout_hour_p50": null, "per_sku": []
+      },
+      {
+        "action": { "kind": "pause_until_restock", "pct": null, "windows_local": null }, "feasible": true, "violations": [],
+        "objective": { "mean": 4300000, "p10": 3220000, "p50": 4297000, "p90": 5550000 },
+        "contribution": { "p50": 4297000 }, "spend": { "p50": 0 },
+        "units_sold": { "p10": 22, "p50": 29, "p90": 37 }, "leftover_units": { "p50": 31 }, "leftover_value": { "p50": 0 },
+        "stockout_hour_p50": null, "per_sku": []
+      }
+    ],
+    "recommendation": {
+      "recommendation_id": "rec-540", "campaign_id": "CD002", "status": "recommend",
+      "best": { "kind": "continue", "pct": null, "windows_local": null },
+      "runner_up": { "kind": "reduce_budget", "pct": 0.3, "windows_local": null },
+      "p_best_beats_runner_up": 0.81, "expected_gain_vnd": 510000,
+      "zone_bar": {
+        "axis_label": "Lượng bán mỗi giờ nếu pause (sp)", "threshold": 3.49,
+        "interval": [1.8, 2.4, 3.1], "verdict": "continue_better",
+        "alt_thresholds": [{ "label": "hàng dư 20.000đ", "threshold": 3.34 }]
+      },
+      "flip_conditions": [],
+      "confidence": "verified",
+      "reasons": [],
+      "inputs_ref": {
+        "forecast_ids": ["fc-8701", "fc-8702", "fc-8703"], "estimate_id": "ie-31",
+        "param_version": 11, "goal_id": "goal-shop-profit", "data_as_of": "2026-11-05T12:00:00+07:00"
+      }
+    }
+  },
+  "meta": {
+    "confidence": "verified",
+    "compute_state": "fresh",
+    "data_as_of": "2026-11-05T12:00:00+07:00",
+    "computed_at": "2026-11-05T12:01:40+07:00",
+    "cache_hit": true,
+    "sources": [
+      { "id": "fc-8701", "kind": "forecast", "label": "Dự báo seasonal_hourly v2026-11-05.1 · NOICHIEN2L", "tool": "seasonal_hourly v2026-11-05.1" },
+      { "id": "ie-31", "kind": "iroas", "label": "Hiệu quả thật của ads CD002 (phiếu điểm 10.10)", "tool": "ads_effect v1" }
+    ]
+  }
+}

@@ -18,8 +18,17 @@ export type SkuListItem = S['SkuListItem'];
 export type Recommendation = S['Recommendation'];
 export type RecommendationStatus = S['RecommendationStatus'];
 export type ZoneBar = S['ZoneBar'];
+export type ZoneVerdict = S['ZoneVerdict'];
+export type AltThreshold = S['AltThreshold'];
+export type BreakevenRequest = S['BreakevenRequest'];
+export type BreakevenResponse = S['BreakevenResponse'];
+export type FlipCondition = S['FlipCondition'];
+export type InputsRef = S['InputsRef'];
+export type SimRequest = S['SimRequest'];
 export type ScenarioRun = S['ScenarioRun'];
 export type ScenarioResult = S['ScenarioResult'];
+export type DecisionCreate = S['DecisionCreate'];
+export type DecisionCreated = S['DecisionCreated'];
 export type Alert = S['Alert'];
 export type LiveStatus = S['LiveStatus'];
 

@@ -49,7 +49,9 @@ function AttentionCard({ item, rec }: { item: SkuListItem; rec: Recommendation |
         <p className="font-medium">{recommendationText(item)}</p>
         <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
           {item.recommendation ? <ConfidenceBadge value={item.recommendation.confidence} /> : null}
-          {rec ? <span className="tabular-nums">{t.gainLine(formatVndMillions(rec.expected_gain_vnd))}</span> : null}
+          {rec?.expected_gain_vnd != null ? (
+            <span className="tabular-nums">{t.gainLine(formatVndMillions(rec.expected_gain_vnd))}</span>
+          ) : null}
           <ComputeStateTag state={item.compute_state} />
         </div>
       </div>

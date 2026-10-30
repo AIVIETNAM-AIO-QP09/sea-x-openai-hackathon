@@ -55,7 +55,7 @@ describe('createApiClient (fixtures)', () => {
 
   it('serves the CD002 recommendation: schedule_hours wins, pause blocked', async () => {
     const rec = await client.get<Envelope<Recommendation>>('/recommendations/rec-551');
-    expect(rec.data.best.kind).toBe('schedule_hours');
+    expect(rec.data.best?.kind).toBe('schedule_hours');
     expect(rec.data.campaign_id).toBe('CD002');
     expect(rec.meta?.confidence).toBe('reference');
 

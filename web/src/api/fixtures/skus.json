@@ -14,7 +14,7 @@
       "stock_available": 0, "hours_of_cover": { "p50": 0 },
       "sold_today_units": 18, "deviation": "below_forecast",
       "campaign": { "id": "CD005", "status": "Đang chạy" },
-      "recommendation": { "recommendation_id": "rec-552", "status": "recommend", "best": { "kind": "reduce_budget", "pct": 50, "windows_local": null }, "confidence": "verified" },
+      "recommendation": { "recommendation_id": "rec-552", "status": "recommend", "best": { "kind": "reduce_budget", "pct": 0.5, "windows_local": null }, "confidence": "verified" },
       "open_alerts": 1, "priority_score": 41.5,
       "compute_state": "fresh", "computed_at": "2026-11-11T15:01:12+07:00"
     },

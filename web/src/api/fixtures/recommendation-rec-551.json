@@ -21,6 +21,11 @@
       "forecast_ids": ["fc-8812", "fc-8813", "fc-8814"], "estimate_id": "ie-37",
       "param_version": 12, "goal_id": "goal-cd002-1111", "data_as_of": "2026-11-11T01:00:00+07:00"
     },
+    "reason_sources": [
+      { "id": "scn-2291", "kind": "scenario", "label": "Mô phỏng scn-2291", "tool": "simulator · 1.000 mẫu", "data_as_of": "2026-11-11T01:00:00+07:00", "href": "#tier-3" },
+      { "id": "contrib-NOICHIEN2L-1111", "kind": "contribution", "label": "Đóng góp NOICHIEN2L", "tool": "economics.contribution", "data_as_of": "2026-11-10T09:00:00+07:00", "href": "/sku/NOICHIEN2L" },
+      { "id": "chuong_trinh_sale.json", "kind": "constraint", "label": "Chương trình 11.11", "tool": "simulator.constraints", "data_as_of": "2026-11-10T09:00:00+07:00" }
+    ],
     "scenario_id": "scn-2291",
     "created_at": "2026-11-11T01:02:10+07:00",
     "superseded_by": null

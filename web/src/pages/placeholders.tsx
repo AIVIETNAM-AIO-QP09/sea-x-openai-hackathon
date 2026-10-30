@@ -1,5 +1,5 @@
 // Placeholder screens for WEB-01. Each one gets its real content in WEB-03..WEB-09.
-import { Bell, Bot, ClipboardList, Package, Scale, Settings, Upload } from 'lucide-react';
+import { Bell, Bot, ClipboardList, Package, Settings, Upload } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { EmptyState, PageHeader } from '../components/states';
 import { viText } from '../lib/i18n';
@@ -11,19 +11,18 @@ export function SkuDetailPage() {
   return (
     <>
       <PageHeader title={sku ? `${p.skuDetail.title} · ${sku}` : p.skuDetail.title} description={p.skuDetail.description} />
-      <EmptyState icon={Package} title={p.skuDetail.emptyTitle} body={p.skuDetail.emptyBody} />
-    </>
-  );
-}
-
-export function ComparePage() {
-  const { sku, id } = useParams();
-  const target = id ?? sku;
-  return (
-    <>
-      <PageHeader title={p.compare.title} description={p.compare.description} />
-      {target ? <p className="mb-3 text-muted">{p.compare.target(target)}</p> : null}
-      <EmptyState icon={Scale} title={p.compare.emptyTitle} body={p.compare.emptyBody} />
+      <EmptyState
+        icon={Package}
+        title={p.skuDetail.emptyTitle}
+        body={p.skuDetail.emptyBody}
+        action={
+          sku ? (
+            <Link to={`/sku/${encodeURIComponent(sku)}/compare`} className="btn-secondary">
+              {viText.nav.compare}
+            </Link>
+          ) : undefined
+        }
+      />
     </>
   );
 }

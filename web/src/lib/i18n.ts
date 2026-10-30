@@ -1,7 +1,12 @@
 // All user-facing Vietnamese strings live here (01 §7, 09 §5).
 import type { ActionSpec, ComputeState, Confidence } from '../api/types';
 import type { Role } from './config';
-import { formatHourWindows, formatNumber } from './format';
+import { formatHourWindows, formatNumber, formatVnd } from './format';
+
+/** ActionSpec.pct is a ratio (05 §1: 0.3 = 30%); values above 1 are read as percent for old fixtures. */
+export function pctOf(pct: number): number {
+  return pct <= 1 ? pct * 100 : pct;
+}
 
 export const viText = {
   app: {
@@ -55,6 +60,16 @@ export const viText = {
     missing: 'chưa có',
   } as Record<string, string>,
   freshnessTooltip: (label: string, time: string, status: string) => `${label} tới ${time} · ${status}`,
+  /** 09 §4: 'Ads tới 12:59, trễ 2 giờ 4 phút (ngưỡng 3 giờ)'. */
+  freshnessLag: (minutes: number, thresholdMinutes?: number) => {
+    const dur = (m: number) => {
+      const h = Math.floor(m / 60);
+      const r = Math.round(m % 60);
+      return h > 0 ? (r > 0 ? `${h} giờ ${r} phút` : `${h} giờ`) : `${r} phút`;
+    };
+    return `trễ ${dur(minutes)}${thresholdMinutes ? ` (ngưỡng ${dur(thresholdMinutes)})` : ''}`;
+  },
+  freshnessMissingSkus: (n: number) => `thiếu ${n} mã`,
   confidence: {
     verified: { label: 'Đã kiểm', hint: 'Dự báo đã được kiểm trên dữ liệu cũ và đạt ngưỡng sai số' },
     reference: { label: 'Tham khảo', hint: 'Đã kiểm nhưng chưa đạt ngưỡng, hoặc bối cảnh mới' },
@@ -74,7 +89,7 @@ export const viText = {
       case 'pause':
         return 'Tạm dừng';
       case 'reduce_budget':
-        return a.pct != null ? `Giảm ngân sách ${formatNumber(a.pct)}%` : 'Giảm ngân sách';
+        return a.pct != null ? `Giảm ngân sách ${formatNumber(pctOf(a.pct))}%` : 'Giảm ngân sách';
       case 'schedule_hours':
         return a.windows_local?.length ? `Chỉ chạy ${formatHourWindows(a.windows_local)}` : 'Chỉ chạy theo khung giờ';
       case 'pause_until_restock':
@@ -168,6 +183,163 @@ export const viText = {
       description: 'Đường dẫn này không có trong app.',
       back: 'Về Tổng quan ca',
     },
+  },
+  zoneBar: {
+    axisLabel: 'Lượng bán mỗi giờ nếu pause (sp)',
+    continueSide: 'Tiếp tục tốt hơn',
+    pauseSide: 'Pause tốt hơn',
+    threshold: (x: string) => `ngưỡng ${x}`,
+    altLabel: (vnd: number) => `hàng dư ${formatVnd(vnd)}`,
+    verdict: {
+      undetermined: (x: string) => `Chưa phân định: khoảng dự báo nằm cả hai phía ngưỡng ${x} sp/giờ.`,
+      pause_better: 'Pause tốt hơn: cả khoảng dự báo nằm trên ngưỡng.',
+      continue_better: 'Tiếp tục tốt hơn: cả khoảng dự báo nằm dưới ngưỡng.',
+    },
+    summary: (p10: string, p50: string, p90: string, x: string) =>
+      `Nếu tạm dừng ads, dự kiến bán ${p10}–${p90} sp/giờ (mức giữa ${p50}). Ngưỡng hòa vốn ${x} sp/giờ.`,
+    altSummary: (label: string, x: string) => `Nếu ${label}: ngưỡng ${x} sp/giờ.`,
+    noBar: 'Giữ hàng lợi hơn bán ở mức giá trị hàng dư này: tạm dừng luôn tốt hơn, không cần thanh vùng.',
+    estimated: 'Ước tính nhanh trên trình duyệt (công thức hòa vốn), chưa chạy lại mô phỏng.',
+  },
+  citation: {
+    kind: {
+      scenario: 'Mô phỏng',
+      forecast: 'Dự báo',
+      iroas: 'Hiệu quả thật của ads',
+      contribution: 'Đóng góp mỗi sản phẩm',
+      constraint: 'Ràng buộc chương trình sale',
+      inventory: 'Tồn kho',
+      parameter: 'Tham số',
+      goal: 'Mục tiêu',
+      breakeven: 'Công thức hòa vốn',
+    } as Record<string, string>,
+    sourceKind: 'Loại nguồn',
+    id: 'Mã',
+    tool: 'Công cụ',
+    dataAsOf: 'Dữ liệu tới',
+    computedAt: 'Tính lúc',
+    open: 'Xem chi tiết kiểm tra',
+    dialog: (label: string) => `Nguồn: ${label}`,
+    close: 'Đóng',
+  },
+  range: {
+    aria: (from: string, to: string) => `khoảng dự báo từ ${from} đến ${to}`,
+  },
+  banner: {
+    scenario: 'Kết quả dựa trên giả định, chưa phải dự báo đã kiểm.',
+    stale: (source: string) => `Dữ liệu ${source} cũ hơn ngưỡng. Kết quả có thể không còn đúng.`,
+    updating: (time: string) => `Đang cập nhật · dữ liệu lúc ${time}`,
+  },
+  compare: {
+    back: 'Tổng quan',
+    title: (campaign: string) => `So sánh lựa chọn cho chiến dịch ${campaign}`,
+    skusInCampaign: (names: string) => `Gồm: ${names}`,
+    goal: (goal: string) => `Mục tiêu: ${goal}`,
+    dataLine: (dataAsOf: string, computedAt: string) => `Dữ liệu tới ${dataAsOf} · tính lúc ${computedAt}`,
+    fixtureNote: 'Số liệu minh họa từ fixture, không phải kết quả mô phỏng thật.',
+    tier1: 'Kết luận',
+    tier2: 'Vì sao?',
+    tier3: 'Chi tiết kiểm tra',
+    headline: {
+      recommend: (best: string, runnerUp: string, gain: string) => `${best}. Lợi hơn ${runnerUp} khoảng ${gain} đ.`,
+      recommendNoRunner: (best: string) => `${best}.`,
+      undetermined: (best: string, runnerUp: string, prob: string) =>
+        `Chưa phân định giữa ${best} và ${runnerUp}: xác suất ${best} tốt hơn mới ${prob}.`,
+    },
+    probLine: (prob: string) => `Xác suất phương án này tốt hơn phương án đứng sau: ${prob}`,
+    pauseBlocked: 'Pause tốt hơn tiếp tục, nhưng không được tắt hẳn vì cam kết flash sale.',
+    betterThanBoth: (action: string) => `Phương án tốt hơn cả hai: ${action}.`,
+    noneMeetsGoal: 'Các lựa chọn này chưa giải quyết được mục tiêu. Cần người có quyền xem phương án khác.',
+    notifyLead: 'Báo lead',
+    notifyLeadDisabled: 'Chưa nối được luồng báo lead (cần API cảnh báo/bàn giao ở mốc sau).',
+    noZoneBar: 'Chưa có thanh vùng cho đề xuất này.',
+    actionCards: 'Năm hành động',
+    bestMark: 'Đề xuất',
+    infeasible: 'Không làm được',
+    stockoutAt: (time: string) => `Hết hàng ${time}`,
+    noStockout: 'Không hết hàng trong kỳ',
+    lowerCase: (s: string) => s.charAt(0).toLowerCase() + s.slice(1),
+    violation: {
+      campaign_must_run: 'Vi phạm cam kết flash sale',
+      budget_exceeded: 'Vượt ngân sách',
+      below_safety_stock: 'Dưới tồn an toàn',
+    } as Record<string, string>,
+    violationFallback: (code: string) => `Vi phạm ràng buộc ${code}`,
+    reasonsTitle: 'Lý do',
+    flipTitle: 'Điều làm đổi kết luận',
+    noFlip: 'Kết luận giữ nguyên trong khoảng bất định hiện tại.',
+    tryTitle: 'Thử thay giả định',
+    sliderLeftover: 'Giá trị 1 sp còn lại sau hạn (V)',
+    sliderRestock: 'Hàng về trễ (ngày, số âm là về sớm)',
+    sliderRestockValue: (d: number) => (d === 0 ? 'đúng hẹn' : d < 0 ? `sớm ${-d} ngày` : `trễ ${d} ngày`),
+    resetParams: 'Về giá trị gốc',
+    whatIfActive: 'Đang dùng giả định của bạn, chưa lưu vào tham số.',
+    flipHit: (text: string) => `Với giả định này đã chạm điểm đổi: ${text}`,
+    flipNotHit: 'Với giả định này, kết luận chưa đổi.',
+    serverRunning: (samples: number) => `Đang chạy lại mô phỏng (${formatNumber(samples, 0)} mẫu)…`,
+    serverDone: (samples: number, id: string) => `Đã chạy lại mô phỏng ${id} (${formatNumber(samples, 0)} mẫu).`,
+    leftoverNoInputs: 'Ở chế độ dữ liệu mẫu, ca này chưa có đầu vào hòa vốn để ước tính nhanh; bản thật gọi lại mô phỏng.',
+    table: {
+      caption: 'Kết quả 5 hành động trong kỳ quyết định',
+      action: 'Hành động',
+      expected: 'Kết quả kỳ vọng',
+      range: 'Khoảng dự báo',
+      spend: 'Chi ads',
+      sold: 'Bán được',
+      leftover: 'Hàng còn lại',
+      stockout: 'Hết hàng',
+      feasible: 'Làm được',
+      yes: 'Có',
+      no: 'Không',
+    },
+    lineage: {
+      title: 'Dữ liệu, tham số và model',
+      dataAsOf: 'Dữ liệu tới',
+      computedAt: 'Tính lúc',
+      forecasts: 'Dự báo dùng',
+      estimate: 'Hiệu quả thật của ads (iROAS)',
+      paramVersion: 'Phiên bản tham số',
+      goal: 'Mục tiêu',
+      scenario: 'Mô phỏng',
+      samples: 'Số mẫu · seed',
+      cache: 'Lấy từ cache',
+      recommendation: 'Mã đề xuất',
+      sources: 'Nguồn',
+    },
+    decision: {
+      open: 'Tạo quyết định',
+      title: 'Tạo quyết định',
+      action: 'Hành động chọn',
+      rationale: 'Lý do',
+      rationaleHint: 'Ghi ngắn vì sao chọn, người duyệt sẽ đọc.',
+      override: 'Khác với đề xuất của app: lead sẽ thấy đây là quyết định ghi đè.',
+      whatIf: 'Lưu ý: số trên màn đang dùng giả định của bạn.',
+      save: 'Lưu bản nháp quyết định',
+      submit: 'Gửi duyệt',
+      cancel: 'Đóng',
+      simulatedNote: 'Thao tác mô phỏng — chưa gửi lên sàn.',
+      disabledFixture: 'Chế độ dữ liệu mẫu: chưa gửi được quyết định lên máy chủ (cần POST /decisions).',
+      disabledViewer: 'Vai trò Xem không được tạo quyết định.',
+      disabledInfeasible: 'Hành động này vi phạm ràng buộc, không tạo quyết định được.',
+      disabledRationale: 'Cần ghi lý do trước khi lưu.',
+      saved: (id: string) => `Đã lưu bản nháp ${id}.`,
+      submitted: (id: string) => `Đã gửi duyệt ${id}. Theo dõi ở Nhật ký quyết định.`,
+    },
+    pick: {
+      active: 'Đề xuất đang hiệu lực',
+      examples: 'Ví dụ minh họa (dữ liệu mẫu)',
+      examplesNote: 'Ba ca dùng để kiểm thanh vùng: 11.11 (chỉ chạy khung flash sale), ngày thường (tiếp tục) và ví dụ trang 10 (chưa phân định, kéo hàng dư lên 20.000đ thì pause tốt hơn).',
+      open: 'Mở so sánh',
+      exampleItems: {
+        fryer1111: 'CD002 · 11.11 · Chỉ chạy khung flash sale',
+        fryerNormalDay: 'CD002 · ngày thường 05/11 · Tiếp tục',
+        page10: 'Ví dụ trang 10 · 120 sp, 4 giờ, 45.000đ/sp',
+      },
+      none: 'Chưa có đề xuất nào đang hiệu lực.',
+    },
+    notFoundSku: (sku: string) => `Không tìm thấy SKU ${sku} trong danh sách.`,
+    noRecommendationTitle: 'Chưa có đề xuất cho đối tượng này',
+    noRecommendationBody: 'SKU không chạy ads hoặc mô phỏng chưa xong. Đề xuất sẽ hiện khi lần tính tiếp theo hoàn tất.',
   },
   state: {
     loading: 'Đang tải',

@@ -26,6 +26,11 @@ const FIXTURE_ROUTES: Record<string, string> = {
   '/recommendations': 'recommendations',
   '/recommendations/rec-551': 'recommendation-rec-551',
   '/scenarios/scn-2291': 'scenario-scn-2291',
+  // Illustrative Compare cases (M3-web.md): CD002 on a normal day, page-10 example.
+  '/recommendations/rec-540': 'recommendation-rec-540',
+  '/scenarios/scn-2280': 'scenario-scn-2280',
+  '/recommendations/rec-510': 'recommendation-rec-510',
+  '/scenarios/scn-2210': 'scenario-scn-2210',
   '/alerts': 'alerts',
 };
 

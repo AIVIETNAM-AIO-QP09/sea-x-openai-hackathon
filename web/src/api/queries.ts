@@ -1,14 +1,17 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import { api } from './client';
 import type {
   Alert,
+  DecisionCreate,
+  DecisionCreated,
   Envelope,
   Freshness,
   HealthStatus,
   Page,
   Recommendation,
   ScenarioRun,
+  SimRequest,
   SkuListItem,
 } from './types';
 
@@ -66,5 +69,28 @@ export function useAlerts(status = 'open') {
   return useQuery({
     queryKey: queryKeys.alerts(status),
     queryFn: ({ signal }) => api.get<Page<Alert>>(`/alerts${qs({ status })}`, signal),
+  });
+}
+
+/** POST /scenarios/run (08 §3.8). Sliders send samples=300 while dragging, 1000 on release. */
+export function useRunScenario() {
+  return useMutation({
+    mutationFn: ({ body, signal }: { body: SimRequest; signal?: AbortSignal }) =>
+      api.post<Envelope<ScenarioRun>>('/scenarios/run', body, { signal }),
+  });
+}
+
+/** POST /decisions (08 §3.10): creates a draft. */
+export function useCreateDecision() {
+  return useMutation({
+    mutationFn: ({ body, idempotencyKey }: { body: DecisionCreate; idempotencyKey: string }) =>
+      api.post<Envelope<DecisionCreated>>('/decisions', body, { idempotencyKey }),
+  });
+}
+
+/** POST /decisions/{id}/submit: draft → pending_approval. */
+export function useSubmitDecision() {
+  return useMutation({
+    mutationFn: (id: string) => api.post<Envelope<DecisionCreated>>(`/decisions/${encodeURIComponent(id)}/submit`),
   });
 }
