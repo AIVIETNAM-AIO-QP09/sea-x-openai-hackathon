@@ -1,0 +1,10 @@
+{
+  "data": {
+    "enabled": true,
+    "day": "2026-11-11",
+    "orders_until": "14:59",
+    "ads_until": "12:59",
+    "last_tick_at": "2026-11-11T15:02:40+07:00",
+    "replay_running": true
+  }
+}

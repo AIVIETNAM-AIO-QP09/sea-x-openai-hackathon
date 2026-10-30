@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "sku": "NOICHIEN2L", "name": "Nồi chiên không dầu mini 2L", "variant": "",
+      "stock_available": 41, "hours_of_cover": { "p50": 6.5 },
+      "sold_today_units": 52, "deviation": "on_track",
+      "campaign": { "id": "CD002", "status": "Đang chạy" },
+      "recommendation": { "recommendation_id": "rec-551", "status": "recommend", "best": { "kind": "schedule_hours", "windows_local": [[0, 2], [12, 14]] }, "confidence": "reference" },
+      "open_alerts": 1, "priority_score": 49.0,
+      "compute_state": "fresh", "computed_at": "2026-11-11T15:01:12+07:00"
+    },
+    {
+      "sku": "AOGIUNHIET-M", "name": "Áo giữ nhiệt nam", "variant": "Size M",
+      "stock_available": 0, "hours_of_cover": { "p50": 0 },
+      "sold_today_units": 18, "deviation": "below_forecast",
+      "campaign": { "id": "CD005", "status": "Đang chạy" },
+      "recommendation": { "recommendation_id": "rec-552", "status": "recommend", "best": { "kind": "reduce_budget", "pct": 50, "windows_local": null }, "confidence": "verified" },
+      "open_alerts": 1, "priority_score": 41.5,
+      "compute_state": "fresh", "computed_at": "2026-11-11T15:01:12+07:00"
+    },
+    {
+      "sku": "BINHNUOC500-HONG", "name": "Bình nước giữ nhiệt 500ml", "variant": "Hồng",
+      "stock_available": 64, "hours_of_cover": { "p10": 3.0, "p50": 4.5, "p90": 7.0 },
+      "sold_today_units": 97, "deviation": "above_forecast",
+      "campaign": { "id": "CD001", "status": "Đang chạy" },
+      "recommendation": { "recommendation_id": "rec-553", "status": "undetermined", "best": { "kind": "continue", "pct": null, "windows_local": null }, "confidence": "scenario" },
+      "open_alerts": 1, "priority_score": 38.2,
+      "compute_state": "computing", "computed_at": "2026-11-11T14:31:40+07:00"
+    },
+    {
+      "sku": "DENLEDTET-10M", "name": "Đèn LED Tết 10m", "variant": "",
+      "stock_available": 1240, "hours_of_cover": { "p50": 310 },
+      "sold_today_units": 9, "deviation": "on_track",
+      "campaign": { "id": "CD003", "status": "Đang chạy" },
+      "recommendation": { "recommendation_id": "rec-554", "status": "recommend", "best": { "kind": "continue", "pct": null, "windows_local": null }, "confidence": "verified" },
+      "open_alerts": 0, "priority_score": 12.0,
+      "compute_state": "fresh", "computed_at": "2026-11-11T15:01:12+07:00"
+    },
+    {
+      "sku": "GIAYLOT50", "name": "Giấy lót nồi chiên 50 tờ", "variant": "",
+      "stock_available": 380, "hours_of_cover": { "p50": 41 },
+      "sold_today_units": 23, "deviation": "on_track",
+      "campaign": { "id": "CD002", "status": "Đang chạy" },
+      "recommendation": { "recommendation_id": "rec-551", "status": "recommend", "best": { "kind": "schedule_hours", "windows_local": [[0, 2], [12, 14]] }, "confidence": "reference" },
+      "open_alerts": 0, "priority_score": 9.4,
+      "compute_state": "fresh", "computed_at": "2026-11-11T15:01:12+07:00"
+    }
+  ],
+  "meta": { "data_as_of": "2026-11-11T14:59:00+07:00" },
+  "next_cursor": null
+}
