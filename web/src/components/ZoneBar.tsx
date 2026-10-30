@@ -5,7 +5,7 @@
 import type { ZoneBar as ZoneBarData } from '../api/types';
 import { formatNumber } from '../lib/format';
 import { viText } from '../lib/i18n';
-import { defaultDomain, niceStep, verdictSentence, zoneBarAriaLabel } from '../lib/zoneBarText';
+import { defaultDomain, drawableAlts, niceStep, verdictSentence, zoneBarAriaLabel } from '../lib/zoneBarText';
 
 const t = viText.zoneBar;
 const fmt = (v: number) => formatNumber(v, 1);
@@ -47,25 +47,52 @@ export function ZoneBar({ bar, domain, estimated = false }: ZoneBarProps) {
   const intervalRight = x90 + 8 + intervalText.length * 7 < W - PAD_X;
   const anchorFor = (px: number) => (px < PAD_X + 50 ? 'start' : px > W - PAD_X - 50 ? 'end' : 'middle');
   const label = zoneBarAriaLabel(bar);
+  // Pause not allowed (05 §7.2): the pause side is hatched and dimmed, and verdict_note
+  // replaces "Pause tốt hơn" so the bar never reads as a pause recommendation.
+  const pauseBlocked = bar.pause_feasible === false;
+  const hatchId = 'zonebar-blocked-hatch';
 
   return (
     <figure className="m-0">
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={label} className="block max-h-44 overflow-visible">
         <title>{label}</title>
+        {pauseBlocked ? (
+          <defs>
+            <pattern id={hatchId} width={8} height={8} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1={0} y1={0} x2={0} y2={8} strokeWidth={3} className="stroke-muted" opacity={0.45} />
+            </pattern>
+          </defs>
+        ) : null}
         {/* Zone names */}
         <text x={PAD_X} y={18} className="fill-fg text-[13px] font-medium">
           ◀ {t.continueSide}
         </text>
-        <text x={W - PAD_X} y={18} textAnchor="end" className="fill-fg text-[13px] font-medium">
-          {t.pauseSide} ▶
+        <text
+          x={W - PAD_X}
+          y={18}
+          textAnchor="end"
+          className={`text-[13px] font-medium ${pauseBlocked ? 'fill-muted line-through' : 'fill-fg'}`}
+        >
+          {pauseBlocked ? t.pauseSideBlocked : t.pauseSide} ▶
         </text>
 
         {/* Regions */}
         <rect x={PAD_X} y={BAND_TOP} width={Math.max(xt - PAD_X, 0)} height={BAND_H} className="fill-zone-continue" rx={4} />
-        <rect x={xt} y={BAND_TOP} width={Math.max(W - PAD_X - xt, 0)} height={BAND_H} className="fill-zone-pause" rx={4} />
+        <rect
+          x={xt}
+          y={BAND_TOP}
+          width={Math.max(W - PAD_X - xt, 0)}
+          height={BAND_H}
+          className="fill-zone-pause"
+          opacity={pauseBlocked ? 0.4 : 1}
+          rx={4}
+        />
+        {pauseBlocked ? (
+          <rect x={xt} y={BAND_TOP} width={Math.max(W - PAD_X - xt, 0)} height={BAND_H} fill={`url(#${hatchId})`} rx={4} />
+        ) : null}
 
         {/* Alternative thresholds (dashed) */}
-        {bar.alt_thresholds.map((alt) => {
+        {drawableAlts(bar).map((alt) => {
           const xa = x(alt.threshold);
           return (
             <g key={alt.label}>
@@ -108,10 +135,16 @@ export function ZoneBar({ bar, domain, estimated = false }: ZoneBarProps) {
       </svg>
       <figcaption className="mt-1 space-y-0.5">
         <p className="text-xs text-muted">{bar.axis_label}</p>
-        <p className="font-medium">{verdictSentence(bar)}</p>
+        {pauseBlocked ? (
+          <p role="note" className="rounded-md border border-warn/60 bg-warn-soft px-2 py-1 font-medium">
+            {verdictSentence(bar)}
+          </p>
+        ) : (
+          <p className="font-medium">{verdictSentence(bar)}</p>
+        )}
         <p className="text-sm text-muted tabular-nums">
           {t.summary(fmt(p10), fmt(p50), fmt(p90), fmt(bar.threshold))}
-          {bar.alt_thresholds.map((a) => ` ${t.altSummary(a.label, fmt(a.threshold))}`).join('')}
+          {drawableAlts(bar).map((a) => ` ${t.altSummary(a.label, fmt(a.threshold))}`).join('')}
         </p>
         {estimated ? <p className="text-xs text-warn">{t.estimated}</p> : null}
       </figcaption>

@@ -1,22 +1,70 @@
 {
   "_note": "Minh họa (không phải đầu ra mô phỏng): CD002 vào một ngày thường 05/11, giá niêm yết 690.000đ, m = 149.200đ/sp, iROAS khoảng 5 (05 §10). Kết luận ngược với 11.11: tiếp tục thắng.",
   "data": {
-    "recommendation_id": "rec-540", "campaign_id": "CD002", "status": "recommend",
-    "best": { "kind": "continue", "pct": null, "windows_local": null },
-    "runner_up": { "kind": "reduce_budget", "pct": 0.3, "windows_local": null },
-    "p_best_beats_runner_up": 0.81, "expected_gain_vnd": 510000,
+    "recommendation_id": "rec-540",
+    "campaign_id": "CD002",
+    "status": "recommend",
+    "best": {
+      "kind": "continue",
+      "pct": null,
+      "windows_local": null
+    },
+    "runner_up": {
+      "kind": "reduce_budget",
+      "pct": 0.3,
+      "windows_local": null
+    },
+    "p_best_beats_runner_up": 0.81,
+    "expected_gain_vnd": 510000,
     "zone_bar": {
-      "axis_label": "Lượng bán mỗi giờ nếu pause (sp)", "threshold": 3.49,
-      "interval": [1.8, 2.4, 3.1], "verdict": "continue_better",
-      "alt_thresholds": [{ "label": "hàng dư 20.000đ", "threshold": 3.34 }],
+      "axis_label": "Lượng bán mỗi giờ nếu pause (sp)",
+      "threshold": 3.49,
+      "interval": [
+        1.8,
+        2.4,
+        3.1
+      ],
+      "verdict": "continue_better",
+      "alt_thresholds": [
+        {
+          "label": "hàng dư 20.000đ",
+          "threshold": 3.34,
+          "leftover_value_per_unit": 20000,
+          "status": "ok"
+        }
+      ],
       "inputs": {
-        "units_left": 60, "hours_left": 12, "contribution_per_unit_vnd": 149200, "spend_per_hour_vnd": 150000,
-        "rate_continue_per_hour": 4.5, "pause_rate_interval": [1.8, 2.4, 3.1], "leftover_value_per_unit_vnd": 0
+        "units_left": 60,
+        "hours_left": 12,
+        "contribution_per_unit_vnd": 149200,
+        "spend_per_hour_vnd": 150000,
+        "rate_continue_per_hour": 4.5,
+        "pause_rate_interval": [
+          1.8,
+          2.4,
+          3.1
+        ],
+        "leftover_value_per_unit_vnd": 0,
+        "alt_leftover_values": [
+          20000
+        ]
       }
     },
     "flip_conditions": [
-      { "factor": "leftover_value_per_unit", "flip_at": 72057, "text": "Nếu hàng dư còn giá trị từ 72.057đ/sp trở lên → Giảm ngân sách 30% tốt hơn" },
-      { "factor": "ads_effect", "flip_at": -0.45, "text": "Nếu ads hiệu quả kém hơn ước lượng 45% → Giảm ngân sách 30% tốt hơn" }
+      {
+        "factor": "leftover_value_per_unit",
+        "flip_at": 72057,
+        "base_value": 0,
+        "unit": "đ/sp",
+        "text": "Nếu hàng dư còn giá trị từ 72.057đ/sp trở lên → Giảm ngân sách 30% tốt hơn"
+      },
+      {
+        "factor": "ads_effect",
+        "flip_at": -0.45,
+        "base_value": 0,
+        "unit": "",
+        "text": "Nếu ads hiệu quả kém hơn ước lượng 45% → Giảm ngân sách 30% tốt hơn"
+      }
     ],
     "confidence": "verified",
     "reasons": [
@@ -24,18 +72,55 @@
       "Còn 60 sp, chạy tiếp vẫn chưa hết hàng tới 24:00: ads bán thêm khoảng 25 sp",
       "Hiệu quả thật của ads khoảng 5 lần, cao hơn mức hòa vốn"
     ],
-    "reason_sources": [
-      { "id": "contrib-NOICHIEN2L-0511", "kind": "contribution", "label": "Đóng góp NOICHIEN2L", "tool": "economics.contribution", "data_as_of": "2026-11-05T09:00:00+07:00", "href": "/sku/NOICHIEN2L" },
-      { "id": "scn-2280", "kind": "scenario", "label": "Mô phỏng scn-2280", "tool": "simulator · 1.000 mẫu", "data_as_of": "2026-11-05T12:00:00+07:00", "href": "#tier-3" },
-      { "id": "ie-31", "kind": "iroas", "label": "Hiệu quả ads CD002", "tool": "ads_effect v1", "data_as_of": "2026-11-05T11:00:00+07:00", "href": "#tier-3" }
-    ],
     "inputs_ref": {
-      "forecast_ids": ["fc-8701", "fc-8702", "fc-8703"], "estimate_id": "ie-31",
-      "param_version": 11, "goal_id": "goal-shop-profit", "data_as_of": "2026-11-05T12:00:00+07:00"
+      "forecast_ids": [
+        "fc-8701",
+        "fc-8702",
+        "fc-8703"
+      ],
+      "estimate_id": "ie-31",
+      "param_version": {
+        "leftover_value_per_unit": 0,
+        "restock_delay_days": 0,
+        "platform_fee_rate": 11
+      },
+      "goal_id": "goal-shop-profit",
+      "data_as_of": "2026-11-05T12:00:00+07:00",
+      "panel_version": null,
+      "iroas_source": "estimate"
     },
     "scenario_id": "scn-2280",
     "created_at": "2026-11-05T12:01:40+07:00",
-    "superseded_by": null
+    "superseded_by": null,
+    "best_label": "Chạy tiếp",
+    "runner_up_label": "Giảm ngân sách 30%",
+    "reason_sources": [
+      {
+        "id": "contrib-NOICHIEN2L-0511",
+        "kind": "contribution",
+        "label": "Đóng góp NOICHIEN2L",
+        "tool": "economics.contribution",
+        "data_as_of": "2026-11-05T09:00:00+07:00",
+        "href": "/api/v1/skus/NOICHIEN2L"
+      },
+      {
+        "id": "scn-2280",
+        "kind": "scenario",
+        "label": "Mô phỏng scn-2280",
+        "tool": "simulator · 1.000 mẫu",
+        "data_as_of": "2026-11-05T12:00:00+07:00",
+        "href": "/api/v1/scenarios/scn-2280"
+      },
+      {
+        "id": "ie-31",
+        "kind": "iroas",
+        "label": "Hiệu quả ads CD002",
+        "tool": "ads_effect v1",
+        "data_as_of": "2026-11-05T11:00:00+07:00",
+        "href": "/api/v1/scenarios/ie-31"
+      }
+    ],
+    "active": true
   },
   "meta": {
     "data_as_of": "2026-11-05T12:00:00+07:00",
@@ -43,8 +128,23 @@
     "compute_state": "fresh",
     "confidence": "verified",
     "sources": [
-      { "id": "scn-2280", "kind": "scenario", "label": "Mô phỏng scn-2280 · 1.000 mẫu" },
-      { "id": "ie-31", "kind": "iroas", "label": "Hiệu quả thật của ads CD002" }
-    ]
+      {
+        "id": "scn-2280",
+        "kind": "scenario",
+        "label": "Mô phỏng scn-2280 · 1.000 mẫu",
+        "href": "/api/v1/scenarios/scn-2280",
+        "tool": null,
+        "data_as_of": null
+      },
+      {
+        "id": "ie-31",
+        "kind": "iroas",
+        "label": "Hiệu quả thật của ads CD002",
+        "tool": null,
+        "data_as_of": null,
+        "href": null
+      }
+    ],
+    "cache_hit": null
   }
 }

@@ -9,6 +9,11 @@
 // Used by the Compare screen to redraw the ZoneBar instantly while a slider moves
 // (09 §2.3, < 100 ms); the server result replaces it when it arrives.
 import type { AltThreshold, BreakevenRequest, BreakevenResponse, ZoneBar, ZoneVerdict } from '../api/types';
+
+/** Part of the POST /scenarios/breakeven response the browser reproduces. */
+export type LocalBreakeven = Pick<BreakevenResponse, 'zone_bar' | 'flip_leftover_value_vnd'>;
+
+const ALT_STATUS = { threshold: 'ok', pause_always: 'pause_sure', continue_always: 'continue_sure' } as const;
 import { viText } from './i18n';
 
 export type ContinueOutcome = {
@@ -101,15 +106,11 @@ export function flipLeftoverValue(req: BreakevenRequest, pauseRatePerHour: numbe
   return v;
 }
 
-function thresholdValue(t: BreakevenThreshold): number | null {
-  return t.kind === 'no_bar' ? null : t.ratePerHour;
-}
-
 /**
  * Same output as POST /scenarios/breakeven: a ZoneBar (null when m ≤ V) plus V*
  * computed at p10. `altLeftoverValues` adds dashed thresholds (default 20.000đ).
  */
-export function computeZoneBar(req: BreakevenRequest, altLeftoverValues: readonly number[] = [20_000]): BreakevenResponse {
+export function computeZoneBar(req: BreakevenRequest, altLeftoverValues: readonly number[] = [20_000]): LocalBreakeven {
   const V = req.leftover_value_per_unit_vnd;
   const main = breakevenThreshold(req, V);
   const interval = req.pause_rate_interval;
@@ -125,8 +126,14 @@ export function computeZoneBar(req: BreakevenRequest, altLeftoverValues: readonl
   const alt_thresholds: AltThreshold[] = [];
   for (const altV of altLeftoverValues) {
     if (altV === V) continue;
-    const t = thresholdValue(breakevenThreshold(req, altV));
-    if (t !== null) alt_thresholds.push({ label: viText.zoneBar.altLabel(altV), threshold: t });
+    const alt = breakevenThreshold(req, altV);
+    if (alt.kind === 'no_bar') continue;
+    alt_thresholds.push({
+      label: viText.zoneBar.altLabel(altV),
+      threshold: alt.ratePerHour,
+      leftover_value_per_unit: altV,
+      status: ALT_STATUS[alt.kind],
+    });
   }
 
   const zone_bar: ZoneBar = {

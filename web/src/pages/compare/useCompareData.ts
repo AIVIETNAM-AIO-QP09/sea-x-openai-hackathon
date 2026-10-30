@@ -1,53 +1,71 @@
 // Resolves which recommendation the Compare screen shows, from either route
 // (09 §1): /sku/:sku/compare or /campaign/:id/compare, with an optional ?rec= override.
+// Real API: GET /skus/{sku} → campaign, GET /campaigns/{id} (name, SKUs, price_max_vnd,
+// goal), GET /recommendations?campaign_id= → the active one, then /recommendations/{id}
+// and /scenarios/{scenario_id}.
 import { useParams, useSearchParams } from 'react-router';
-import { useRecommendation, useRecommendations, useScenario, useSkus } from '../../api/queries';
-import type { SkuListItem } from '../../api/types';
+import { useCampaign, useRecommendation, useRecommendations, useScenario, useSku } from '../../api/queries';
+import type { CampaignDetail, Recommendation, SkuDetail } from '../../api/types';
 
 export type CompareTarget = {
   sku?: string;
   campaignId?: string;
-  skuItem?: SkuListItem;
+  skuItem?: SkuDetail;
+  campaign?: CampaignDetail;
   recommendationId?: string;
-  /** Lookup lists still loading. */
+  /** Lookups still loading. */
   resolving: boolean;
+  /** GET /campaigns/{id} still loading (needed before showing the setup panel). */
+  campaignPending: boolean;
   resolveError: unknown;
   retryResolve: () => void;
+  /** "Nồi chiên không dầu mini 2L, Giấy lót…" from the campaign's SKU list. */
+  campaignSkuNames: string[];
 };
 
-export function useCompareTarget(): CompareTarget & { campaignSkus: SkuListItem[] } {
+/** Active recommendation of a campaign from a /recommendations page (fixtures ignore the filter). */
+export function pickActive(list: readonly Recommendation[] | undefined, campaignId: string | undefined): Recommendation | undefined {
+  if (!list || !campaignId) return undefined;
+  const mine = list.filter((r) => r.campaign_id === campaignId && !r.superseded_by);
+  return mine.find((r) => r.active !== false) ?? mine[0];
+}
+
+export function useCompareTarget(): CompareTarget {
   const { sku, id } = useParams();
   const [search] = useSearchParams();
   const recParam = search.get('rec') ?? undefined;
 
-  const skus = useSkus();
-  const recs = useRecommendations();
-
-  const skuItem = sku ? skus.data?.data.find((s) => s.sku === sku) : undefined;
-  let recommendationId = recParam;
-  if (!recommendationId && sku) recommendationId = skuItem?.recommendation?.recommendation_id;
-  if (!recommendationId && id) recommendationId = recs.data?.data.find((r) => r.campaign_id === id)?.recommendation_id;
-
+  const skuQ = useSku(sku);
+  const skuItem = skuQ.data?.data;
   const campaignId = id ?? skuItem?.campaign?.id;
-  const needsSkus = Boolean(sku) && !recParam;
-  const needsRecs = Boolean(id) && !recParam;
-  const resolving = (needsSkus && skus.isPending) || (needsRecs && recs.isPending);
-  const resolveError = (needsSkus && skus.error) || (needsRecs && recs.error) || null;
+  const campaignQ = useCampaign(campaignId);
+  const needsList = Boolean(campaignId) && !recParam;
+  const recsQ = useRecommendations({ campaign_id: campaignId ?? '', active: 'true' }, needsList);
 
-  const campaignSkus = campaignId ? (skus.data?.data ?? []).filter((s) => s.campaign?.id === campaignId) : [];
+  let recommendationId = recParam;
+  if (!recommendationId) recommendationId = pickActive(recsQ.data?.data, campaignId)?.recommendation_id;
+  if (!recommendationId && sku && skuItem?.recommendation) recommendationId = skuItem.recommendation.recommendation_id;
+
+  const resolving = (Boolean(sku) && skuQ.isPending) || (needsList && recsQ.isPending);
+  const resolveError = (sku && skuQ.error) || (needsList && recsQ.error) || null;
+  const campaign = campaignQ.data?.data;
+  const campaignSkuNames = (campaign?.sku_detail ?? []).map((s) => (s.variant ? `${s.name} · ${s.variant}` : s.name));
 
   return {
     sku,
     campaignId,
     skuItem,
+    campaign,
     recommendationId,
     resolving,
+    campaignPending: Boolean(campaignId) && campaignQ.isPending,
     resolveError,
     retryResolve: () => {
-      void skus.refetch();
-      void recs.refetch();
+      void skuQ.refetch();
+      void recsQ.refetch();
+      void campaignQ.refetch();
     },
-    campaignSkus,
+    campaignSkuNames,
   };
 }
 

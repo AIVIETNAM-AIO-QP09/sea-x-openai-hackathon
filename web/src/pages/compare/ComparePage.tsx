@@ -7,7 +7,7 @@ import { useFreshness, useRecommendations, useRunScenario } from '../../api/quer
 import { ComputeStateTag, ConfidenceBadge } from '../../components/badges';
 import { Banner, EmptyState, ErrorState, PageHeader, SkeletonRows, UpdatingRegion } from '../../components/states';
 import { config } from '../../lib/config';
-import { formatTime } from '../../lib/format';
+import { formatTime, formatVnd } from '../../lib/format';
 import { viText } from '../../lib/i18n';
 import { useStoredBoolean } from '../../lib/storage';
 import {
@@ -20,8 +20,16 @@ import {
   TierSection,
   ZoneBarBlock,
 } from './CompareParts';
+import { NeedsRecommendation } from './CompareSetup';
 import {
   BASE_WHAT_IF,
+  clampLeftover,
+  goalText,
+  holdBetterReason,
+  leftoverMax as leftoverMaxFor,
+  leftoverMin as leftoverMinFor,
+  noZoneBarText,
+  outOfRangeMax,
   betterThanBothLine,
   buildSimRequest,
   flipHits,
@@ -119,7 +127,7 @@ export function ComparePage() {
   }, [baseRec, baseRun, run.data, serverForCurrent, whatIf]);
 
   // ------------------------------------------------------------------ states
-  if (target.resolving || (recQuery.isPending && target.recommendationId)) {
+  if (target.resolving || (recQuery.isPending && target.recommendationId) || (!target.recommendationId && target.campaignPending)) {
     return (
       <>
         <PageHeader title={viText.pages.compare.title} description={viText.pages.compare.description} />
@@ -136,9 +144,31 @@ export function ComparePage() {
     );
   }
   if (!target.recommendationId) {
+    const header = (
+      <PageHeader
+        title={target.campaignId ? t.title(target.campaignId) : viText.pages.compare.title}
+        description={target.campaign ? t.campaignName(target.campaign.name) : viText.pages.compare.description}
+      />
+    );
+    if (!config.useFixtures && target.campaign) {
+      return (
+        <>
+          {header}
+          <NeedsRecommendation campaign={target.campaign} dataAsOf={freshness.data?.data.data_as_of} />
+        </>
+      );
+    }
+    if (target.skuItem && !target.skuItem.campaign) {
+      return (
+        <>
+          {header}
+          <EmptyState icon={Scale} title={t.noCampaignTitle} body={t.noCampaignBody} />
+        </>
+      );
+    }
     return (
       <>
-        <PageHeader title={viText.pages.compare.title} description={viText.pages.compare.description} />
+        {header}
         {target.sku && !target.skuItem ? <p className="mb-3 text-muted">{t.notFoundSku(target.sku)}</p> : null}
         <EmptyState
           icon={Scale}
@@ -166,11 +196,16 @@ export function ComparePage() {
   // ------------------------------------------------------------------ ready
   const { rec, results, local, rerun } = view;
   const meta = rerun ? run.data?.meta : (scenarioEnv?.meta ?? recEnv?.meta);
-  const dataAsOf = rec.inputs_ref.data_as_of;
-  const computedAt = meta?.computed_at ?? recEnv?.meta?.computed_at ?? rec.created_at;
+  const dataAsOf = rec.inputs_ref.data_as_of ?? meta?.data_as_of ?? null;
+  const computedAt = meta?.computed_at ?? recEnv?.meta?.computed_at ?? rec.created_at ?? null;
   const confidence = meta?.confidence ?? rec.confidence;
   const computeState = meta?.compute_state ?? 'fresh';
   const staleSources = (freshness.data?.data.sources ?? []).filter((s) => s.status === 'stale' || s.status === 'missing');
+  const holdReason = holdBetterReason(rec);
+  const campaign = target.campaign;
+  const vMax = leftoverMaxFor(campaign, baseRec, config.useFixtures);
+  const vMin = leftoverMinFor(campaign, config.useFixtures);
+  const apiMax = run.isError ? outOfRangeMax(run.error) : null;
   const whatIfActive = isWhatIfActive(whatIf);
   const updating = run.isPending || computeState === 'computing' || computeState === 'queued';
 
@@ -187,6 +222,9 @@ export function ComparePage() {
     if (config.useFixtures) {
       if (whatIf.leftoverValue !== null && !inputs) lines.push(t.leftoverNoInputs);
       lines.push(hits.length ? hits.map((h) => t.flipHit(h.text)).join(' ') : t.flipNotHit);
+    } else if (run.isError) {
+      lines.push(t.serverError(run.error instanceof Error ? run.error.message : String(run.error)));
+      if (apiMax != null) lines.push(t.clampedTo(formatVnd(apiMax)));
     } else if (run.isPending) {
       lines.push(t.serverRunning(run.variables?.body.samples ?? samples));
     } else if (rerun && run.data) {
@@ -198,7 +236,7 @@ export function ComparePage() {
   const head = headline(rec);
   const backTo = target.sku ? `/sku/${encodeURIComponent(target.sku)}` : '/';
   const backLabel = target.skuItem ? target.skuItem.name : t.back;
-  const skuNames = target.campaignSkus.map((s) => (s.variant ? `${s.name} · ${s.variant}` : s.name));
+  const skuNames = target.campaignSkuNames;
 
   return (
     <>
@@ -210,15 +248,15 @@ export function ComparePage() {
       </div>
       <PageHeader
         title={t.title(rec.campaign_id)}
-        description={skuNames.length ? t.skusInCampaign(skuNames.join(', ')) : viText.pages.compare.description}
+        description={[campaign ? t.campaignName(campaign.name) : null, skuNames.length ? t.skusInCampaign(skuNames.join(', ')) : null].filter(Boolean).join(' · ') || viText.pages.compare.description}
       />
       <div className="-mt-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span>{t.goal(rec.inputs_ref.goal_id)}</span>
+        <span>{t.goal(goalText(campaign?.goal, rec.inputs_ref.goal_id))}</span>
         <span className="text-muted tabular-nums">
-          {t.dataLine(formatTime(dataAsOf), computedAt ? formatTime(computedAt) : '—')}
+          {t.dataLine(formatTime(dataAsOf), formatTime(computedAt))}
         </span>
         <ConfidenceBadge value={confidence} />
-        {computeState !== 'fresh' ? <ComputeStateTag state={computeState} computedAt={computedAt} /> : null}
+        {computeState !== 'fresh' ? <ComputeStateTag state={computeState} computedAt={computedAt ?? undefined} /> : null}
         {config.useFixtures ? <span className="text-xs text-warn">{t.fixtureNote}</span> : null}
       </div>
 
@@ -252,7 +290,8 @@ export function ComparePage() {
                 <ZoneBarBlock
                   bar={local.bar}
                   estimated={local.estimated}
-                  extraLines={[pauseBlockedLine(local.bar, results), betterThanBothLine(rec)]}
+                  noBarText={noZoneBarText(rec)}
+                  extraLines={[pauseBlockedLine(local.bar, results, Boolean(holdReason)), betterThanBothLine(rec)]}
                 />
               </>
             )}
@@ -283,19 +322,22 @@ export function ComparePage() {
         <TierSection id="tier-2" title={t.tier2} open={tier2Open} onToggle={setTier2Open}>
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="space-y-4">
-              <ReasonList rec={rec.reasons.length ? rec : baseRec} computedAt={computedAt} />
+              <ReasonList rec={rec.reasons.length ? rec : baseRec} computedAt={computedAt ?? undefined} />
               <FlipList rec={rec.flip_conditions.length ? rec : baseRec} />
             </div>
             {showLeftover || showRestock ? (
               <ParamSliders
                 whatIf={whatIf}
                 showLeftover={showLeftover}
-                leftoverMax={inputs ? inputs.contribution_per_unit_vnd : 1_000_000}
+                leftoverMax={vMax}
+                leftoverMin={vMin}
                 leftoverBase={leftoverBase}
+                leftoverIsDefault={!inputs && whatIf.leftoverValue === null}
+                leftoverHint={config.useFixtures ? null : t.sliderLeftoverHint(formatVnd(vMin), formatVnd(vMax))}
                 showRestock={showRestock}
                 onChange={(next) => {
                   setSamples(DRAG_SAMPLES);
-                  setWhatIf(next);
+                  setWhatIf(next.leftoverValue === null ? next : { ...next, leftoverValue: clampLeftover(next.leftoverValue, vMax, vMin) });
                 }}
                 onRelease={() => setSamples(RELEASE_SAMPLES)}
                 onReset={() => {
@@ -316,7 +358,7 @@ export function ComparePage() {
           ) : (
             <>
               <ResultsTable results={results} rec={rec} />
-              <Lineage rec={rec} run={rerun ?? baseRun} meta={meta} />
+              <Lineage rec={rec} run={rerun ?? baseRun} meta={meta} campaign={campaign} />
             </>
           )}
         </TierSection>

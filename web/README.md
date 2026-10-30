@@ -15,6 +15,10 @@ npm run dev             # http://localhost:5173
 
 Khi `npm run dev`, mọi request `/api/*` được proxy sang `VITE_PROXY_TARGET` (mặc định `http://localhost:8000`), nên backend chạy ở cổng 8000 là dùng được ngay, không cần CORS.
 
+## Chạy với API thật
+
+`VITE_USE_FIXTURES=false`, backend ở `VITE_PROXY_TARGET`. Tổng quan ca gọi `/me`, `/freshness`, `/skus`, `/recommendations`; So sánh gọi `/skus/{sku}`, `/campaigns/{id}`, `/recommendations?campaign_id=`, `/recommendations/{id}`, `/scenarios/{id}`, `POST /scenarios/run`, `POST /goals` (lead). Muốn chạy song song với một dev server fixture mà không sửa `.env.local`: tạo `.env.e2e` (`VITE_USE_FIXTURES=false`, `VITE_PROXY_TARGET=http://localhost:8001`) rồi `npx vite --mode e2e --port 5174 --strictPort`. Chi tiết và kết quả chạy thử: [docs/quyet-dinh/M3-web.md](../docs/quyet-dinh/M3-web.md) §11–13.
+
 ## Chế độ fixture (chưa có backend)
 
 ```bash
@@ -39,6 +43,8 @@ Client không gọi mạng mà đọc JSON trong `src/api/fixtures/`, lấy từ
 
 Màn So sánh: `/sku/NOICHIEN2L/compare`, `/campaign/CD002/compare`, `/campaign/CD002/compare?rec=rec-540`, `/campaign/VIDU-T10/compare?rec=rec-510`; `/compare` liệt kê cả ba. Ở chế độ fixture, thanh trượt chỉ ước tính bằng `src/lib/breakeven.ts`, không gọi `POST /scenarios/run`. Quyết định liên quan: [docs/quyet-dinh/M3-web.md](../docs/quyet-dinh/M3-web.md).
 
+`GET /skus/{sku}` lấy dòng tương ứng trong `skus.json`; `/campaigns/CD002` lấy từ `campaign-CD002.json` (phản hồi thật). Fixture theo đúng hình dạng phản hồi thật (M3-api §5).
+
 Thêm fixture: tạo file JSON trong `src/api/fixtures/` và thêm một dòng vào `FIXTURE_ROUTES` trong `src/api/client.ts`. Query string bị bỏ qua khi tra fixture. Test (`npm test`) luôn chạy ở chế độ fixture.
 
 ## Sinh type từ OpenAPI
@@ -48,7 +54,7 @@ npm run gen:api                                   # thử localhost:8000/api/v1/
 OPENAPI_URL=http://host:8000/api/v1/openapi.json npm run gen:api
 ```
 
-Kết quả ghi đè `src/api/schema.d.ts`. Khi backend chưa chạy, lệnh báo lỗi rõ ràng, thoát mã 1 và **không đụng** file hiện tại. Bản đang commit là schema tạm viết tay theo 08-api để code biên dịch được.
+Kết quả ghi đè `src/api/schema.d.ts`. Khi backend chưa chạy, lệnh báo lỗi rõ ràng, thoát mã 1 và **không đụng** file hiện tại. Bản đang commit sinh từ backend thật (M3). Endpoint M4 chưa có (decisions, alerts, live) dùng kiểu viết tay ở `src/api/pending.ts`.
 
 Code trong app chỉ import type qua `src/api/types.ts`. Sau khi sinh từ backend thật, chạy `npm run typecheck`; nếu tên schema Pydantic khác bản tạm, chỉ cần sửa alias trong `types.ts`.
 

@@ -43,7 +43,7 @@ const freshnessDot: Record<FreshnessSource['status'], string> = {
 };
 
 export function FreshnessBadge({ source }: { source: FreshnessSource }) {
-  const label = viText.freshnessSource[source.source] ?? source.source;
+  const label = viText.freshnessSource[source.source] ?? source.label;
   const status = viText.freshnessStatus[source.status] ?? source.status;
   const extra = [
     source.lag_minutes != null ? viText.freshnessLag(source.lag_minutes, source.threshold_minutes) : null,

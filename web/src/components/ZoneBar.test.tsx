@@ -9,7 +9,7 @@ const undetermined: ZoneBarData = {
   threshold: 22.5,
   interval: [18, 24, 31],
   verdict: 'undetermined',
-  alt_thresholds: [{ label: 'hàng dư 20.000đ', threshold: 16.5 }],
+  alt_thresholds: [{ label: 'hàng dư 20.000đ', threshold: 16.5, leftover_value_per_unit: 20_000, status: 'ok' }],
 };
 
 describe('ZoneBar (09 §4 examples)', () => {
@@ -47,5 +47,26 @@ describe('ZoneBar (09 §4 examples)', () => {
   it('continue_better reads the third sentence', () => {
     render(<ZoneBar bar={{ ...undetermined, threshold: 3.49, interval: [1.8, 2.4, 3.1], verdict: 'continue_better', alt_thresholds: [] }} />);
     expect(screen.getByText('Tiếp tục tốt hơn: cả khoảng dự báo nằm dưới ngưỡng.')).toBeInTheDocument();
+  });
+
+  it('pause not allowed: verdict_note replaces "Pause tốt hơn"', () => {
+    render(
+      <ZoneBar
+        bar={{
+          ...undetermined,
+          threshold: 0,
+          verdict: 'pause_better',
+          pause_feasible: false,
+          pause_violations: ['campaign_must_run'],
+          verdict_note: 'Tạm dừng bị cấm vì đã cam kết với sàn trong khung flash sale. Về tiền, tạm dừng lợi hơn chạy tiếp',
+        }}
+      />,
+    );
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Tạm dừng bị cấm');
+    expect(label).not.toContain('Pause tốt hơn: cả khoảng');
+    expect(screen.getByRole('note')).toHaveTextContent('Tạm dừng bị cấm');
+    expect(screen.getByText('Pause (bị cấm) ▶')).toBeInTheDocument();
+    expect(screen.queryByText('Pause tốt hơn ▶')).not.toBeInTheDocument();
   });
 });

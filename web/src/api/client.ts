@@ -31,19 +31,29 @@ const FIXTURE_ROUTES: Record<string, string> = {
   '/scenarios/scn-2280': 'scenario-scn-2280',
   '/recommendations/rec-510': 'recommendation-rec-510',
   '/scenarios/scn-2210': 'scenario-scn-2210',
+  '/campaigns/CD002': 'campaign-CD002',
   '/alerts': 'alerts',
 };
 
 const fixtureLoaders = import.meta.glob<unknown>('./fixtures/*.json', { import: 'default' });
 
 async function loadFixture(path: string): Promise<unknown> {
-  const name = FIXTURE_ROUTES[path.split('?')[0] ?? path];
+  const bare = path.split('?')[0] ?? path;
+  const name = FIXTURE_ROUTES[bare];
   const loader = name ? fixtureLoaders[`./fixtures/${name}.json`] : undefined;
-  if (!loader) {
-    throw new ApiError(404, 'NOT_FOUND', viText.errors.fixtureMissing(path));
+  if (loader) {
+    // structuredClone keeps callers from mutating the shared fixture module.
+    return structuredClone(await loader());
   }
-  // structuredClone keeps callers from mutating the shared fixture module.
-  return structuredClone(await loader());
+  // GET /skus/{sku}: answer from the list fixture (the detail adds fields the UI reads as optional).
+  const skuMatch = /^\/skus\/([^/]+)$/.exec(bare);
+  const listLoader = fixtureLoaders['./fixtures/skus.json'];
+  if (skuMatch && listLoader) {
+    const list = (await listLoader()) as { data: { sku: string }[]; meta?: unknown };
+    const row = list.data.find((r) => r.sku === decodeURIComponent(skuMatch[1] ?? ''));
+    if (row) return structuredClone({ data: row, meta: list.meta });
+  }
+  throw new ApiError(404, 'NOT_FOUND', viText.errors.fixtureMissing(path));
 }
 
 function isErrorBody(value: unknown): value is ApiErrorBody {

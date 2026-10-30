@@ -1,1 +1,17 @@
-{ "data": { "user_id": "u-ops-1", "name": "Lan", "role": "operator", "shop_name": "Shop Gia Dụng Demo" } }
+{
+  "data": {
+    "id": "u-ops-1",
+    "role": "operator",
+    "role_label": "Vận hành",
+    "can_run_scenarios": true,
+    "can_edit_goals": false
+  },
+  "meta": {
+    "data_as_of": null,
+    "computed_at": "2026-11-11T15:03:00+07:00",
+    "compute_state": "fresh",
+    "confidence": null,
+    "sources": [],
+    "cache_hit": null
+  }
+}

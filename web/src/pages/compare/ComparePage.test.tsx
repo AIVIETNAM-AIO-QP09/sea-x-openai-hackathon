@@ -94,7 +94,7 @@ describe('Compare screen · two more ZoneBar examples (fixture)', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toContain('ngưỡng 22,5 sp/giờ');
 
     await userEvent.click(screen.getByRole('button', { name: 'Vì sao?' }));
-    fireEvent.change(screen.getByLabelText(/Giá trị 1 sp còn lại/), { target: { value: '20000' } });
+    fireEvent.change(screen.getByLabelText(/1 sp còn lại sau hạn/), { target: { value: '20000' } });
 
     const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
     expect(label).toContain('Pause tốt hơn: cả khoảng dự báo nằm trên ngưỡng.');

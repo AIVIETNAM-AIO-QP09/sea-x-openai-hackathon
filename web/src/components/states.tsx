@@ -98,7 +98,7 @@ export function UpdatingRegion({
   className = '',
 }: {
   updating: boolean;
-  dataAsOf?: string;
+  dataAsOf?: string | null;
   children: ReactNode;
   className?: string;
 }) {

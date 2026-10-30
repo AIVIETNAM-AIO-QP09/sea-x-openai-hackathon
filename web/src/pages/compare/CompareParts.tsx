@@ -1,7 +1,7 @@
 // Building blocks of the 3-tier Compare screen (09 §2.3).
 import { ChevronDown, ChevronRight, CircleSlash, RotateCcw, Star } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { Meta, Recommendation, ScenarioResult, ScenarioRun, ZoneBar as ZoneBarData } from '../../api/types';
+import type { CampaignDetail, Commitment, Meta, Recommendation, ScenarioResult, ScenarioRun, ZoneBar as ZoneBarData } from '../../api/types';
 import { CitationChip } from '../../components/CitationChip';
 import { MoneyVND, Range } from '../../components/numbers';
 import { ZoneBar } from '../../components/ZoneBar';
@@ -12,7 +12,10 @@ import {
   citationFromSource,
   expectedObjective,
   orderResults,
+  paramVersionText,
   reasonCitation,
+  RESTOCK_MAX,
+  RESTOCK_MIN,
   sameAction,
   splitFirstNumber,
   violationLabel,
@@ -85,6 +88,16 @@ function ActionCard({ result, isBest }: { result: ScenarioResult; isBest: boolea
             <li key={v}>{violationLabel(v)}</li>
           ))}
         </ul>
+        {result.violation_details?.length ? (
+          <ul className="mt-0.5 text-xs">
+            {result.violation_details.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        ) : null}
+        {result.objective ? (
+          <p className="mt-1 text-xs tabular-nums">{t.infeasibleIfAllowed(formatVndMillions(expectedObjective(result)))}</p>
+        ) : null}
       </li>
     );
   }
@@ -106,6 +119,7 @@ function ActionCard({ result, isBest }: { result: ScenarioResult; isBest: boolea
       <p className="mt-1 text-xs text-muted tabular-nums">
         {result.stockout_hour_p50 ? t.stockoutAt(formatTime(result.stockout_hour_p50)) : t.noStockout}
       </p>
+      {result.duplicate_of ? <p className="mt-0.5 text-xs text-muted">{t.duplicateOf(result.duplicate_of)}</p> : null}
     </li>
   );
 }
@@ -123,10 +137,12 @@ export function ActionCards({ results, rec }: { results: ScenarioResult[]; rec: 
 export function ZoneBarBlock({
   bar,
   estimated,
+  noBarText,
   extraLines,
 }: {
   bar: ZoneBarData | null;
   estimated: boolean;
+  noBarText: string;
   extraLines: (string | null)[];
 }) {
   return (
@@ -134,7 +150,7 @@ export function ZoneBarBlock({
       {bar ? (
         <ZoneBar bar={bar} estimated={estimated} />
       ) : (
-        <p className="text-muted">{estimated ? viText.zoneBar.noBar : t.noZoneBar}</p>
+        <p className="text-muted">{estimated ? viText.zoneBar.noBar : noBarText}</p>
       )}
       {extraLines.filter(Boolean).map((line) => (
         <p key={line} className="mt-1 font-medium">
@@ -201,7 +217,10 @@ export function ParamSliders({
   whatIf,
   showLeftover,
   leftoverMax,
+  leftoverMin = 0,
   leftoverBase,
+  leftoverIsDefault = false,
+  leftoverHint = null,
   showRestock,
   onChange,
   onRelease,
@@ -211,7 +230,10 @@ export function ParamSliders({
   whatIf: WhatIf;
   showLeftover: boolean;
   leftoverMax: number;
+  leftoverMin?: number;
   leftoverBase: number;
+  leftoverIsDefault?: boolean;
+  leftoverHint?: string | null;
   showRestock: boolean;
   onChange: (next: WhatIf) => void;
   onRelease: () => void;
@@ -227,18 +249,19 @@ export function ParamSliders({
         <label className="block">
           <span className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
             <span>{t.sliderLeftover}</span>
-            <span className="font-medium tabular-nums">{formatVnd(v)}/sp</span>
+            <span className="font-medium tabular-nums">{leftoverIsDefault ? t.sliderLeftoverDefault : `${formatVnd(v)}/sp`}</span>
           </span>
           <input
             type="range"
-            min={0}
+            min={leftoverMin}
             max={leftoverMax}
-            step={500}
+            step={leftoverMax > 200_000 ? 1000 : 500}
             value={v}
             onChange={(e) => onChange({ ...whatIf, leftoverValue: Number(e.target.value) })}
             {...releaseProps}
             className="mt-1 w-full accent-[var(--accent)]"
           />
+          {leftoverHint ? <span className="text-xs text-muted">{leftoverHint}</span> : null}
         </label>
       ) : null}
       {showRestock ? (
@@ -249,8 +272,8 @@ export function ParamSliders({
           </span>
           <input
             type="range"
-            min={-3}
-            max={7}
+            min={RESTOCK_MIN}
+            max={RESTOCK_MAX}
             step={1}
             value={whatIf.restockDelayDays}
             onChange={(e) => onChange({ ...whatIf, restockDelayDays: Number(e.target.value) })}
@@ -329,7 +352,17 @@ export function ResultsTable({ results, rec }: { results: ScenarioResult[]; rec:
   );
 }
 
-export function Lineage({ rec, run, meta }: { rec: Recommendation; run: ScenarioRun | undefined; meta: Meta | undefined }) {
+export function Lineage({
+  rec,
+  run,
+  meta,
+  campaign,
+}: {
+  rec: Recommendation;
+  run: ScenarioRun | undefined;
+  meta: Meta | undefined;
+  campaign?: CampaignDetail;
+}) {
   const l = t.lineage;
   const ref = rec.inputs_ref;
   const req = run?.request;
@@ -337,12 +370,13 @@ export function Lineage({ rec, run, meta }: { rec: Recommendation; run: Scenario
     [l.dataAsOf, formatDateTime(ref.data_as_of)],
     [l.computedAt, meta?.computed_at ? formatDateTime(meta.computed_at) : '—'],
     [l.forecasts, ref.forecast_ids.join(', ')],
-    [l.estimate, ref.estimate_id],
-    [l.paramVersion, String(ref.param_version)],
+    [l.estimate, ref.estimate_id ?? '—'],
+    [l.paramVersion, paramVersionText(ref.param_version)],
     [l.goal, ref.goal_id],
     [l.scenario, run?.scenario_id ?? rec.scenario_id ?? '—'],
-    [l.samples, req ? `${formatNumber(req.samples ?? 0, 0)} · ${req.seed ?? '—'}` : '—'],
-    [l.cache, meta?.cache_hit == null ? '—' : meta.cache_hit ? t.table.yes : t.table.no],
+    [l.samples, req ? `${formatNumber(req.samples, 0)} · ${req.seed}` : '—'],
+    [l.horizon, req?.start ? `${formatDateTime(req.start)} · ${formatNumber(req.horizon_hours ?? null, 0)} ${l.hours}` : '—'],
+    [l.cache, (meta?.cache_hit ?? run?.cache_hit) == null ? '—' : (meta?.cache_hit ?? run?.cache_hit) ? t.table.yes : t.table.no],
     [l.recommendation, rec.recommendation_id],
   ];
   return (
@@ -358,6 +392,19 @@ export function Lineage({ rec, run, meta }: { rec: Recommendation; run: Scenario
           ))}
         </dl>
       </div>
+      {campaign?.commitments.length ? (
+        <div>
+          <h3 className="mb-1 text-sm font-medium text-muted">{l.commitments}</h3>
+          <ul className="list-disc space-y-0.5 pl-5 text-sm">
+            {(campaign.commitments as Commitment[]).map((c, i) => (
+              <li key={c.id ?? i}>
+                {c.text ?? c.kind}
+                {c.windows_local?.length ? ` · ${c.windows_local.map(([a, b]) => `${a}–${b}h`).join(', ')}` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {meta?.sources?.length ? (
         <div>
           <h3 className="mb-1 text-sm font-medium text-muted">{l.sources}</h3>
