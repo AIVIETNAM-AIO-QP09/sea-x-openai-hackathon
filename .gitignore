@@ -26,3 +26,9 @@ web/dist/
 .DS_Store
 Thumbs.db
 .idea/
+
+# Generated sanitized source fallback (built from this repo)
+web/server/repository-sources.json
+web/.dev.vars
+web/.wrangler/
+qa/runs/

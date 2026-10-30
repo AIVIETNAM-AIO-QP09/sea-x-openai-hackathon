@@ -595,3 +595,21 @@ Người, ước lượng và ưu tiên theo 12-lo-trinh-va-phan-viec. `GET /hea
 | API-06 | Router decisions, actions, alerts | D4 | 0,5 | P0 | GOV-01, ORC-05 |
 | API-07 | SSE `/stream` + `/ai/chat` + live status/control (mức sàn: `/ai/chat` trả JSON một lần, không stream) | D3 | 0,5 | P0 | ORC-01, AI-01, LIVE-01 |
 | EVAL-04 | Contract test mọi endpoint | D3 | 0,5 | P1 | API-03..07 |
+
+
+## Hosted account workspace extension
+
+The same-origin city adds `/api/auth/{login,logout,session}`, revisioned
+`GET/PUT /api/workspace/{sources,settings,sandbox,chats}` and authenticated
+WebSocket `/api/workspace/events`. These routes sit outside `/api/v1` and do not
+change Python governance identities or permissions. The server assigns the
+shared `admin` account; clients cannot choose a tenant. Each document returns
+`{revision, updatedAt, data}`; PUT requires `{revision, data}` and returns 409 on
+stale writes. WebSocket messages contain `{name, revision}` and trigger refetch.
+
+`GET /api/pm/models` returns models accessible to the configured key.
+`POST /api/pm/chat` accepts `{sessionId, lastMessageId}`, loads saved messages,
+and persists the reply before returning. It no longer accepts client-supplied
+conversation context. Failed generation leaves the saved user message available
+for retry. See [account workspace](../city-demo/account-workspace.md) for schema
+bounds, synchronization and frontend/backend boundaries.

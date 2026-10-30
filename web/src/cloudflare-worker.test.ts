@@ -1,121 +1,199 @@
-import { describe, expect, it } from 'vitest';
-import worker from '../worker';
-
-describe('Cloudflare deployment health', () => {
-  it('reports healthy only when the bound database responds', async () => {
-    const response = await worker.fetch(
-      new Request('https://example.test/healthz'),
-      {
-        DB: { prepare: () => ({ first: async () => ({ ok: 1 }) }) },
-        ASSETS: { fetch: async () => new Response('app') },
-      },
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      status: 'ok',
-      db: 'ok',
-      mode: 'fixtures',
-    });
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-  });
-
-  it('returns 503 without exposing database errors', async () => {
-    const response = await worker.fetch(
-      new Request('https://example.test/healthz'),
-      {
-        DB: {
-          prepare: () => ({
-            first: async () => {
-              throw new Error('private detail');
-            },
-          }),
-        },
-        ASSETS: { fetch: async () => new Response('app') },
-      },
-    );
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      status: 'degraded',
-      db: 'error',
-      mode: 'fixtures',
-    });
-  });
-
-  it('serves app routes through the assets binding', async () => {
-    const response = await worker.fetch(
-      new Request('https://example.test/settings'),
-      {
-        DB: {
-          prepare: () => {
-            throw new Error('App assets must not query D1');
-          },
-        },
-        ASSETS: { fetch: async () => new Response('<div id="root"></div>') },
-      },
-    );
-    expect(await response.text()).toBe('<div id="root"></div>');
-  });
-});
-
-describe('isolated city frontend service', () => {
-  const base = {
-    DB: { prepare: () => ({ first: async () => ({ ok: 1 }) }) },
-    ASSETS: { fetch: async () => new Response('existing app') },
+import { describe, expect, it } from "vitest";
+import worker from "../worker";
+import { login, passwordHash, session } from "../server/auth";
+import { createHmac, scryptSync } from "node:crypto";
+const base = {
+  DB: { prepare: () => ({ first: async () => ({ ok: 1 }) }) },
+  ASSETS: { fetch: async () => new Response("repo-owned app") },
+};
+const origin = "https://example.test";
+async function authenticated() {
+  const env = {
+    ...base,
+    SESSION_SECRET: "workspace-test-secret-at-least-32-bytes",
+    ADMIN_PASSWORD_HASH: await passwordHash("test-password"),
   };
-  it('routes city, login and sample-data paths to the frontend service', async () => {
-    for (const path of [
-      '/',
-      '/city-demo',
-      '/login',
-      '/mock-data',
-      '/_next/static/app.js',
-      '/api/auth/login',
-      '/api/pm/models',
-      '/api/pm/chat',
-      '/api/data-backend',
-    ]) {
-      const response = await worker.fetch(
-        new Request(`https://example.test${path}`),
-        {
-          ...base,
-          CITY_UI: {
-            fetch: async (request) =>
-              new Response(new URL(request.url).pathname),
+  const response = await login(
+    new Request(`${origin}/api/auth/login`, {
+      method: "POST",
+      headers: { Origin: origin },
+      body: JSON.stringify({ username: "admin", password: "test-password" }),
+    }),
+    env,
+  );
+  return { env, cookie: response.headers.get("set-cookie")!.split(";")[0]! };
+}
+describe("repository-owned deployment", () => {
+  it("checks D1 without requiring a session", async () => {
+    const response = await worker.fetch(new Request(`${origin}/healthz`), base);
+    expect(await response.json()).toEqual({
+      status: "ok",
+      db: "ok",
+      mode: "fixtures",
+    });
+    const unhealthy = await worker.fetch(new Request(`${origin}/healthz`), {
+      ...base,
+      DB: {
+        prepare: () => ({
+          first: async () => {
+            throw Error("private database error");
           },
-        },
+        }),
+      },
+    });
+    expect(unhealthy.status).toBe(503);
+    expect(await unhealthy.text()).not.toContain("private database");
+  });
+  it("requires authentication for city, sources and API", async () => {
+    for (const path of ["/city-demo", "/mock-data", "/settings"])
+      expect(
+        (await worker.fetch(new Request(origin + path), base)).status,
+      ).toBe(307);
+    for (const path of ["/api/workspace/sources", "/api/v1/skus"])
+      expect(
+        (await worker.fetch(new Request(origin + path), base)).status,
+      ).toBe(401);
+    expect(
+      (await worker.fetch(new Request(origin + "/login"), base)).status,
+    ).toBe(200);
+  });
+  it("serves all frontend assets from this repo without another Worker", async () => {
+    const { env, cookie } = await authenticated();
+    for (const path of ["/city-demo", "/mock-data", "/?workspace=operations"]) {
+      const response = await worker.fetch(
+        new Request(origin + path, { headers: { Cookie: cookie } }),
+        env,
       );
-      expect(await response.text()).toBe(path);
+      expect(await response.text()).toBe("repo-owned app");
     }
   });
-  it('preserves existing routes and D1 health without granting API privileges', async () => {
-    const CITY_UI = { fetch: async () => new Response(null, { status: 200 }) };
+  it("assigns the workspace account server-side and rejects cross-origin writes", async () => {
+    const { env, cookie } = await authenticated();
+    const workspace = {
+      idFromName: (name: string) => {
+        expect(name).toBe("admin");
+        return "fixed";
+      },
+      get: () => ({ fetch: async () => Response.json({ revision: 1 }) }),
+    };
     const response = await worker.fetch(
-      new Request('https://example.test/?workspace=operations'),
-      { ...base, CITY_UI },
+      new Request(origin + "/api/workspace/settings", {
+        method: "PUT",
+        headers: { Cookie: cookie, Origin: origin },
+        body: "{}",
+      }),
+      { ...env, WORKSPACE: workspace },
     );
-    expect(await response.text()).toBe('existing app');
-    const health = await worker.fetch(
-      new Request('https://example.test/healthz'),
-      { ...base, CITY_UI },
+    expect(response.status).toBe(200);
+    const denied = await worker.fetch(
+      new Request(origin + "/api/workspace/settings", {
+        method: "PUT",
+        headers: { Cookie: cookie, Origin: "https://other.test" },
+        body: "{}",
+      }),
+      { ...env, WORKSPACE: workspace },
     );
-    expect(await health.json()).toEqual({
-      status: 'ok',
-      db: 'ok',
-      mode: 'fixtures',
-    });
+    expect(denied.status).toBe(403);
   });
-  it('requires a validated session for the existing app and API surface', async () => {
-    const CITY_UI = { fetch: async () => new Response(null, { status: 401 }) };
-    const page = await worker.fetch(
-      new Request('https://example.test/settings'),
-      { ...base, CITY_UI },
+  it("does not grant backend roles from request headers", async () => {
+    const { env, cookie } = await authenticated();
+    const response = await worker.fetch(
+      new Request(origin + "/api/v1/skus", {
+        headers: { Cookie: cookie, "X-Role": "lead" },
+      }),
+      env,
     );
-    expect(page.status).toBe(307);
-    const api = await worker.fetch(
-      new Request('https://example.test/api/v1/skus'),
-      { ...base, CITY_UI },
+    expect(response.status).toBe(503);
+    expect(await response.text()).toContain("Python backend is not connected");
+  });
+});
+describe("account access", () => {
+  it("preserves the deployed scrypt password and existing megaday_session cookies", async () => {
+    const secret = "existing-production-secret-at-least-32-bytes";
+    const salt = "legacy-test-salt";
+    const env = {
+      ...base,
+      SESSION_SECRET: secret,
+      ADMIN_PASSWORD_HASH: `scrypt:${salt}:${scryptSync("existing-password", salt, 64).toString("base64url")}`,
+    };
+    const payload = `admin.${Math.floor(Date.now() / 1000) + 3600}.existing-session`;
+    const token = `${payload}.${createHmac("sha256", secret).update(payload).digest("base64url")}`;
+    expect(
+      await session(
+        new Request(origin, {
+          headers: { Cookie: `megaday_session=${token}` },
+        }),
+        env,
+      ),
+    ).toBe(true);
+    const response = await login(
+      new Request(origin + "/api/auth/login", {
+        method: "POST",
+        headers: { Origin: origin },
+        body: JSON.stringify({
+          username: "admin",
+          password: "existing-password",
+        }),
+      }),
+      env,
     );
-    expect(api.status).toBe(401);
-    expect(await api.json()).toHaveProperty('error.code', 'UNAUTHENTICATED');
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toMatch(/^megaday_session=/);
+    const denied = await login(
+      new Request(origin + "/api/auth/login", {
+        method: "POST",
+        headers: { Origin: origin },
+        body: JSON.stringify({ username: "admin", password: "wrong" }),
+      }),
+      env,
+    );
+    expect(denied.status).toBe(401);
+  });
+  it("sets a signed HttpOnly cookie and rejects a changed token", async () => {
+    const { env, cookie } = await authenticated();
+    expect(
+      await session(new Request(origin, { headers: { Cookie: cookie } }), env),
+    ).toBe(true);
+    expect(
+      await session(
+        new Request(origin, { headers: { Cookie: cookie + "x" } }),
+        env,
+      ),
+    ).toBe(false);
+    expect(await session(new Request(origin), env)).toBe(false);
+  });
+  it("rejects bad credentials, cross-origin login and logout", async () => {
+    const { env } = await authenticated();
+    expect(
+      (
+        await login(
+          new Request(origin + "/api/auth/login", {
+            method: "POST",
+            headers: { Origin: origin },
+            body: JSON.stringify({ username: "admin", password: "wrong" }),
+          }),
+          env,
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await login(
+          new Request(origin + "/api/auth/login", {
+            method: "POST",
+            body: "{}",
+          }),
+          env,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await worker.fetch(
+          new Request(origin + "/api/auth/logout", { method: "POST" }),
+          env,
+        )
+      ).status,
+    ).toBe(403);
   });
 });
