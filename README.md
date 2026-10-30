@@ -138,6 +138,11 @@ npm run dev                                             # http://localhost:5173 
 
 Chưa muốn chạy backend thì bật chế độ fixture cho web: tạo `web/.env.local` với `VITE_USE_FIXTURES=true`.
 
+Bản demo Cloudflare: <https://hackathon.dangphuc.me>. Deploy dùng `cf` CLI,
+Worker `hackathon` và D1 mới `hackathon-db`; hiện frontend dùng dữ liệu mẫu,
+backend Python/DuckDB chưa deploy. Mỗi push vào `main` tự deploy sau khi mọi
+kiểm tra CI thành công. Cấu hình và lệnh ở [web/README.md](web/README.md#cloudflare).
+
 Các lệnh `ingest`, `backtest`, `estimate-ads` đã có trong CLI nhưng còn là khung; chúng được làm thật ở M1–M3.
 
 Kiểm tra trước khi push (giống hệt CI):

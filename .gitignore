@@ -20,6 +20,7 @@ htmlcov/
 # Node
 node_modules/
 web/dist/
+.cloudflare/
 
 # Hệ điều hành và editor
 .DS_Store
