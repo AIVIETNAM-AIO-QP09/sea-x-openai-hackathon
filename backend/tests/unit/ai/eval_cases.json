@@ -146,10 +146,10 @@
       "question": "Dữ liệu ads có đang trễ không?",
       "script": [
         {"tool_calls": [{"name": "get_data_freshness", "arguments": {}}]},
-        {"text": "Số liệu ads trễ 124 phút [[src:fresh-1503]], báo cáo ads thường trễ khoảng 2 giờ nên vẫn bình thường."}
+        {"text": "Số liệu ads trễ 124 phút [[src:fresh-1503]], dưới ngưỡng 180 phút nên vẫn bình thường."}
       ],
       "tool_fixtures": {
-        "get_data_freshness": {"sources": [{"source": "ads", "lag_minutes": 124, "status": "fresh", "note": "Báo cáo ads thường trễ khoảng 2 giờ"}], "_sources": [{"id": "fresh-1503", "kind": "freshness", "label": "Độ mới dữ liệu"}]}
+        "get_data_freshness": {"sources": [{"source": "ads", "lag_minutes": 124, "threshold_minutes": 180, "status": "fresh", "note": "Báo cáo ads thường trễ khoảng 2 giờ"}], "_sources": [{"id": "fresh-1503", "kind": "freshness", "label": "Độ mới dữ liệu"}]}
       },
       "expect": {"tools_called_include": ["get_data_freshness"], "grounding_ok": true}
     },
@@ -160,10 +160,10 @@
       "question": "Vì sao nên chạy theo khung giờ cho CD002?",
       "script": [
         {"tool_calls": [{"name": "compare_actions", "arguments": {"campaign_id": "CD002", "horizon_hours": null}}]},
-        {"text": "Nên chỉ chạy theo khung giờ flash sale [[src:scn-e]].\n- Hàng hết khoảng 14:00 ngày 11/11 nên ads không bán thêm được [[src:scn-e]].\n- Mỗi nồi chỉ lãi 9.280đ [[src:scn-e]].\n- Không được tắt hẳn vì đã cam kết với sàn [[src:scn-e]].\nNếu hàng về trong hôm nay, kết luận có thể đổi."}
+        {"text": "Nên chỉ chạy theo khung giờ flash sale [[src:scn-e]].\n- Hàng hết khoảng 14:00 ngày 11/11 nên ads không bán thêm được [[src:scn-e]].\n- Chạy cả ngày tốn 5.299.234đ tiền ads, chỉ chạy khung giờ tốn 1.180.332đ [[src:scn-e]].\n- Không được tắt hẳn vì đã cam kết với sàn [[src:scn-e]].\nNếu hàng về trong hôm nay, kết luận có thể đổi."}
       ],
       "tool_fixtures": {
-        "compare_actions": {"scenario_id": "scn-e", "why": ["Hàng NOICHIEN2L sẽ hết khoảng 14:00 11/11", "Ở giá 11.11 (531.000đ) mỗi sp NOICHIEN2L lãi 9.280đ", "Không được tắt hẳn vì đã cam kết với sàn"], "_sources": [{"id": "scn-e", "kind": "scenario", "label": "scn-e"}]}
+        "compare_actions": {"scenario_id": "scn-e", "results": [{"key": "continue", "spend": {"p50": 5299234.0, "mean": 5299234.0}, "stockout_hour_p50": "2026-11-11T14:00:00+07:00"}, {"key": "schedule_hours:0-2,12-14", "spend": {"p50": 1180332.0, "mean": 1180332.0}}], "why": ["Hàng NOICHIEN2L sẽ hết khoảng 14:00 11/11", "Ở giá 11.11 (531.000đ) mỗi sp NOICHIEN2L lãi 9.280đ", "Không được tắt hẳn vì đã cam kết với sàn"], "_sources": [{"id": "scn-e", "kind": "scenario", "label": "scn-e"}]}
       },
       "expect": {"tools_called_include": ["compare_actions"], "grounding_ok": true}
     },

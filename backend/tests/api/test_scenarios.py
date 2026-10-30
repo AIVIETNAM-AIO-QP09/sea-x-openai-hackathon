@@ -218,3 +218,77 @@ def test_breakeven_errors(api: TestClient) -> None:
         )
     )["data"]
     assert hold["zone_bar"] is None and hold["status"] == "hold_better" and hold["reason"]
+
+
+def test_run_waits_for_the_live_write_lock(api: TestClient, first_run: dict[str, Any]) -> None:
+    """M5: a run started while the orchestrator recomputes (new goal, live tick) used to
+    fail with DuckDB "Conflict on update" (both write forecasts / demand groups); it now
+    waits for the live write lock."""
+    import threading
+    import time
+
+    lock = api.app.state.runtime.lock  # type: ignore[attr-defined]
+    lock.acquire()
+    timer = threading.Timer(0.5, lock.release)
+    timer.start()
+    t0 = time.perf_counter()
+    body = {"campaign_id": "CD002", "samples": 300}
+    out = ok(api.post(f"{V1}/scenarios/run", json=body, headers=OPS))
+    waited = time.perf_counter() - t0
+    timer.join()
+    assert out["data"]["scenario_id"] == first_run["data"]["scenario_id"]  # cache hit
+    assert waited >= 0.45
+
+
+@pytest.mark.parametrize("which", ["live", "run"])
+def test_ai_compute_tools_wait_for_the_simulation_locks(
+    api: TestClient, first_run: dict[str, Any], which: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M5 Q5: the AI compute tools (``compare_actions``, ``run_scenario``,
+    ``compute_breakeven``) write forecasts / demand groups like ``POST /scenarios/run``; they
+    take the runtime's live write lock (found without a request: the runtime registers it on
+    start) and then ``RUN_LOCK``, so a question asked while a tick recomputes waits."""
+    import threading
+    import time
+
+    from app.ai.tools import ToolContext, compute
+    from app.ai.tools.schemas import CompareActionsArgs, RunScenarioArgs
+    from app.simulator import locks
+
+    runtime_lock = api.app.state.runtime.lock  # type: ignore[attr-defined]
+    assert locks.live_write_lock() is runtime_lock  # registered by Runtime.start
+    lock = runtime_lock if which == "live" else locks.RUN_LOCK
+    db = api.app.state.db  # type: ignore[attr-defined]
+    settings = api.app.state.settings  # type: ignore[attr-defined]
+    started: list[float] = []
+    real = compute.run_simulation
+
+    def spy(*a: Any, **kw: Any) -> Any:
+        started.append(time.perf_counter())
+        assert runtime_lock.locked() and locks.RUN_LOCK.locked()  # both held by the tool
+        return real(*a, **kw)
+
+    monkeypatch.setattr(compute, "run_simulation", spy)
+    whatif = RunScenarioArgs.model_validate(
+        {"campaign_id": "CD002", "goal_override": {"kind": "sell_target", "target_units": 97}}
+    )
+    calls = (
+        lambda ctx: compute.compare_actions(CompareActionsArgs(campaign_id="CD002"), ctx),
+        lambda ctx: compute.run_scenario(whatif, ctx),
+    )
+    for call in calls:
+        released: list[float] = []
+
+        def release(released: list[float] = released) -> None:
+            released.append(time.perf_counter())
+            lock.release()
+
+        lock.acquire()
+        timer = threading.Timer(0.3, release)
+        timer.start()
+        with db.reader() as conn:
+            out = call(ToolContext(conn=conn, settings=settings, log_calls=False))
+        timer.join()
+        assert out.data["results"], out.data
+        assert started[-1] >= released[0]  # the simulation began only after the release
+    assert not runtime_lock.locked() and not locks.RUN_LOCK.locked()

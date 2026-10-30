@@ -377,8 +377,8 @@ class Orchestrator:
         forecasts: dict[str, ForecastResult],
         res: RecomputeResult,
     ) -> bool:
-        from app.api.scenarios import _RUN_LOCK  # same lock as POST /scenarios/run
         from app.economics.goals import active_goal
+        from app.simulator.locks import RUN_LOCK  # self.lock (held) → RUN_LOCK
         from app.simulator.schemas import SimRequest
         from app.simulator.service import run_simulation
 
@@ -389,7 +389,7 @@ class Orchestrator:
         events: list[RecommendationChanged] = []
         try:
             req = SimRequest(campaign_id=campaign_id, goal_id=goal.goal_id, samples=self.samples)
-            with _RUN_LOCK:
+            with RUN_LOCK:
                 out = run_simulation(
                     conn,
                     req,

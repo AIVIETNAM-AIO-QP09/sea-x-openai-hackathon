@@ -109,6 +109,7 @@ SCN = ToolOutput(
         ],
         "recommendation": {
             "best": {"kind": "schedule_hours", "windows_local": [[0, 2], [12, 14]]},
+            "contribution_per_unit_vnd": 9280,
             "reasons": ["Ở giá 11.11 (531.000đ) mỗi sp NOICHIEN2L lãi 9.280đ, đạt 81%"],
         },
         "data_as_of": "2026-11-11T14:00:00+07:00",
@@ -186,9 +187,12 @@ def test_rounding_and_units(text: str, ok: bool) -> None:
 
 
 def test_unit_mismatch_pct_vs_units() -> None:
-    only_text = ToolOutput("c9", "x", {"reason": "đạt 81%"}, ("s9",))
-    assert check("Đạt 81%.", [only_text]).ok
-    assert not check("Bán 81 sp.", [only_text]).ok
+    prob = ToolOutput("c9", "x", {"p_target": 0.81}, ("s9",))
+    assert check("Đạt 81%.", [prob]).ok
+    assert not check("Bán 81 sp.", [prob]).ok
+    units = ToolOutput("c9", "x", {"units_sold": {"mean": 81.0}, "spend": 81_000}, ("s9",))
+    assert check("Bán 81 sp, chi 81.000đ.", [units]).ok
+    assert not check("Đạt 81%.", [units]).ok  # a % never matches a quantity / an amount
 
 
 def test_number_quoted_from_user_question() -> None:
@@ -239,3 +243,121 @@ def test_collect_skips_ids_and_sources() -> None:
 def test_sentence_without_numbers_ok() -> None:
     r = check("Ads vẫn chạy bình thường.", OUTS)
     assert r.ok and r.numbers == []
+
+
+# ---------------------------------------------------------------------- strict matching (M5 Q5)
+# What-if "97 cái" on a DB with backtest/fit: the tools said 67 % (reduce 30 %) and 51 %
+# (time windows); the old check passed "81%" as "0.5 + 80" and "57%" from a reason string.
+WIF = ToolOutput(
+    call_id="c5",
+    tool="run_scenario",
+    source_ids=("scn-5",),
+    args={"campaign_id": "CD002"},
+    payload={
+        "campaign_id": "CD002",
+        "goal": {"kind": "sell_target", "target_units": 97, "sell_target_prob": 0.8},
+        "results": [
+            {
+                "key": "reduce_budget:0.3",
+                "label": "Giảm ngân sách 30%",
+                "action": {"kind": "reduce_budget", "pct": 0.3},
+                "p_target": 0.67,
+                "units_sold": {"mean": 98.4},
+                "spend": {"mean": 3_621_635.0},
+                "goal_note": "Xác suất bán đủ 97 sp là 67% < 80%",
+            },
+            {
+                "key": "reduce_budget:0.5",
+                "action": {"kind": "reduce_budget", "pct": 0.5},
+                "p_target": 0.62,
+                "spend": {"mean": 2_503_235.0},
+            },
+            {
+                "key": "schedule_hours:0-2,12-14",
+                "action": {"kind": "schedule_hours", "windows_local": [[0, 2], [12, 14]]},
+                "p_target": 0.51,
+                "spend": {"mean": 1_180_000.0},
+            },
+        ],
+        "recommendation": {
+            "best": {"kind": "reduce_budget", "pct": 0.3},
+            "threshold_pct": 80,
+            "budget_left_today": 375_915,
+            "reasons": ["Ở giá 11.11 mỗi sp lãi 9.280đ; ads chỉ có lời khi iROAS ≥ 57.2"],
+        },
+    },
+)
+
+
+def _status(text: str, outs: list[ToolOutput] | None = None) -> list[str]:
+    return [n.status for n in check(text, outs or [WIF]).numbers]
+
+
+def test_regression_81_is_not_half_plus_80() -> None:
+    for text in (
+        "Giảm ngân sách 30% thì xác suất đạt 81%.",
+        "Giảm ngân sách 30% thì xác suất đạt 81%, hơn ngưỡng 80%.",  # with an operation word
+        "Tổng xác suất đạt 81%.",
+    ):
+        r = check(text, [WIF])
+        assert not r.ok, (text, r.numbers)
+        assert any(n.raw == "81%" and n.status == "unmatched" for n in r.numbers)
+
+
+def test_regression_number_only_in_reason_text_is_blocked() -> None:
+    r = check("Chạy khung giờ chỉ đạt 57%.", [WIF])
+    assert not r.ok and r.numbers[0].status == "unmatched"
+    assert not check("Mỗi sp lãi 9.280đ.", [WIF]).ok  # only in reasons
+    # a number that is in the text *and* structured grounds on the structured value
+    r = check("Xác suất bán đủ 67%.", [WIF])
+    assert r.ok and r.numbers[0].path == "$.results[0].p_target"
+
+
+def test_regression_true_numbers_pass() -> None:
+    r = check(
+        "Giảm ngân sách 30% [[src:scn-5]]: xác suất bán đủ 97 sp là 67% [[src:scn-5]],"
+        " còn chạy khung giờ chỉ đạt 51%, dưới ngưỡng 80%.",
+        [WIF],
+    )
+    assert r.ok, r.violations
+    by = {n.raw: n.path for n in r.numbers}
+    assert by["67%"] == "$.results[0].p_target"
+    assert by["51%"] == "$.results[2].p_target"
+    assert by["30%"] is not None and by["30%"].endswith(".pct")
+    assert by["80%"] in ("$.goal.sell_target_prob", "$.recommendation.threshold_pct")
+
+
+def test_percent_never_matches_money_or_quantity() -> None:
+    assert not check("Khả năng đạt 98%.", [WIF]).ok  # units_sold 98.4
+    assert not check("Khả năng đạt 97%.", [WIF]).ok  # target_units 97
+    assert check("Bán được 98 sp.", [WIF]).ok
+
+
+def test_near_miss_outside_tolerance_blocked() -> None:
+    assert check("Xác suất 67,4%.", [WIF]).ok  # within 0,5 điểm %
+    assert not check("Xác suất 68%.", [WIF]).ok  # 0.67 → 68 % is 1 điểm off
+    assert not check("Chi 3,7 triệu.", [WIF]).ok  # 3.621.635đ shown as 3,7 tr: off by > 50.000đ
+    assert check("Chi 3,6 triệu.", [WIF]).ok
+
+
+def test_arithmetic_only_within_one_metric() -> None:
+    # same metric, same simulation: p_target 0.67 − 0.51 = 16 điểm %
+    r = check("Giảm 30% hơn chạy khung giờ 16 điểm %.", [WIF])
+    assert r.ok and r.numbers[-1].status == "arith"
+    # spend gap of two options: 3.621.635 − 1.180.000 = 2.441.635đ
+    assert check("Giảm 30% tốn hơn chạy khung giờ 2.441.635đ.", [WIF]).ok
+    # mixed kinds: 98.4 sp + 0.67 → "99" / 97 sp + 0.5 → "97,5%" never pass
+    assert not check("Tổng cộng 99%.", [WIF]).ok
+    assert not check("Tổng cộng 97,5%.", [WIF]).ok
+    # two different metrics, even of one unit, are never combined:
+    # spend 3.621.635đ + budget_left_today 375.915đ, units_sold 98,4 + target_units 97
+    assert not check("Tổng chi 3.997.550đ.", [WIF]).ok
+    assert not check("Tổng cộng 195 sp.", [WIF]).ok
+    # spend of two options of the same run is a valid sum
+    assert check("Tổng chi của hai cách 4.801.635đ.", [WIF]).ok
+    # threshold_pct 80 + action.pct 0.5 (→ 50) are different metrics: never 130 %
+    assert not check("Ngưỡng cộng thêm thành 130%.", [WIF]).ok
+
+
+def test_small_number_never_grounds_money() -> None:
+    assert not check("Lãi 500đ mỗi sp.", [WIF]).ok  # 0.5 / 0.3 are not 500đ
