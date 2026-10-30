@@ -13,6 +13,7 @@ Trợ lý ra quyết định quảng cáo cho người vận hành shop trên Sh
 | Tài liệu sản phẩm (tính năng, hoàn cảnh, điều kiện sử dụng) | Có | [MegaDay-Twin-Tinh-nang-hoan-canh-va-dieu-kien-su-dung.pdf](MegaDay-Twin-Tinh-nang-hoan-canh-va-dieu-kien-su-dung.pdf) |
 | Plan kỹ thuật đầy đủ (14 file) | Có | [docs/dev-plan/](docs/dev-plan/README.md) |
 | Bộ sinh dữ liệu giả lập có đáp án | Có, chạy được | [mock-data/](mock-data/README.md) |
+| Dữ liệu đã sinh sẵn (cỡ `nho` và `demo`, seed 20261111) | Có | `mock-data/out/` |
 | Backend (FastAPI + DuckDB + OpenAI) | Chưa bắt đầu, mốc M0 | `backend/` |
 | Frontend (React + Vite) | Chưa bắt đầu, mốc M0 | `web/` |
 
@@ -90,7 +91,7 @@ cd sea-x-openai-hackathon
 
 ### 2. Sinh dữ liệu giả lập
 
-Dữ liệu không được commit lên repo. Mỗi người tự sinh; cùng seed thì cả team ra cùng một bộ.
+Hai bộ `nho` và `demo` đã có sẵn trong repo ở `mock-data/out/`, clone về là dùng được ngay. Chỉ cần chạy lại khi sửa bộ sinh hoặc `config.json`; cùng seed thì ra cùng một bộ (trừ thời điểm tạo ghi trong `manifest.json`).
 
 ```bash
 cd mock-data
@@ -207,7 +208,7 @@ Mã task (`INF`, `ING`, `PNL`, `FC`, `ADS`, `ECO`, `SIM`, `ORC`, `AI`, `API`, `W
 3. **Người duyệt mọi hành động.** AI chỉ đề xuất tham số (`set_by=ai_suggested`); không tự tạo mục tiêu, không tự thao tác quảng cáo.
 4. **Bỏ PII ngay khi nhập.** Tên, số điện thoại, địa chỉ người mua không được lưu vào DB và không gửi lên OpenAI.
 5. **Dữ liệu ngoài là dữ liệu, không phải lệnh.** Ghi chú khách, tên sản phẩm, nội dung file luôn được bọc nhãn untrusted khi đưa cho AI.
-6. **Không commit bí mật và dữ liệu sinh.** `.env`, `mock-data/out/`, `backend/data/` đã nằm trong `.gitignore`.
+6. **Không commit bí mật.** `.env`, `backend/data/` (DuckDB) và `live_stream/` (dữ liệu phát lại, thay đổi liên tục) đã nằm trong `.gitignore`. Dữ liệu giả lập trong `mock-data/out/` thì được commit.
 7. **Trung thực về độ bất định.** Mọi con số có nhãn Đã kiểm / Tham khảo / Kịch bản; dữ liệu mô phỏng luôn được gọi là mô phỏng.
 
 ## Việc đầu tiên
