@@ -6,12 +6,15 @@ Không viết lại phép đo: gọi ``eval.eval_data.run``, ``eval.eval_forecas
 Mỗi dòng: tên | pitch | đo được | ĐẠT / LỆCH (dung sai ghi trong cột "dung sai").
 
     cd backend
-    uv run python -m eval.pitch_numbers                         # đủ, ~10–20 phút (forecast nặng)
-    uv run python -m eval.pitch_numbers --skip forecast         # bỏ phần dự báo (~3 phút)
+    uv run python -m eval.pitch_numbers                         # đủ, ~6–20 phút (forecast nặng)
+    uv run python -m eval.pitch_numbers --skip forecast         # bỏ phần dự báo
     uv run python -m eval.pitch_numbers --reuse-db PATH         # what-if trên bản sao DB có sẵn
+    uv run python -m eval.pitch_numbers --light                 # bản nhẹ: số KHÁC pitch
 
-``--reuse-db``: DB demo tới 11/11 01:00 đã có ước lượng iROAS (ví dụ DB của
-``app.demo_import --models``). Script chép sang thư mục tạm rồi mới dùng, không ghi vào file gốc.
+What-if mặc định dựng DB ĐẦY ĐỦ như ``scripts/demo.mjs`` (``app.demo_import --replay-hour 0
+--models``: backtest + fit + iROAS, ~3–5 phút; "phương án A" trong M5-chuan-bi-demo.md).
+``--reuse-db``: DB demo 01:00 đầy đủ có sẵn (vd ``data/pitch-<thời gian>/demo.duckdb`` của
+``demo.mjs``). Script chép sang thư mục tạm rồi mới dùng, không ghi vào file gốc.
 Chỉ phần what-if / ``/scenarios/run`` dùng DB này; phần dữ liệu, dự báo, iROAS luôn tự dựng DB
 tạm vì chúng đo cả thời gian nạp hoặc cần đúng lịch sử.
 
@@ -25,7 +28,6 @@ import contextlib
 import io
 import json
 import re
-import shutil
 import statistics
 import sys
 import tempfile
@@ -251,12 +253,13 @@ def section_ads(b: Board, size: str) -> None:
 WHATIF_ITEMS = [
     ("CD002 iROAS ước lượng (DB demo 11/11 01:00)", "~4,4–4,5"),
     ("[1] CD002 11.11 01:00 profit: đề xuất", "schedule_hours 0-2,12-14"),
-    ("[1] hơn chạy tiếp", "~3,99 tr"),
-    ("[1] hơn giảm 50% (runner-up)", "~1,23 tr"),
+    ("[1] hơn chạy tiếp", "~3,97 tr"),
+    ("[1] hơn giảm 50% (runner-up)", "~1,22 tr"),
     ("[1] xác suất p", "≈ 1"),
     ("[1] tạm dừng bị cấm (flash)", "cấm"),
-    ("[4g] chỉ tiêu 97 sp: đề xuất", "reduce_budget 0.3"),
-    ("[4g] cái giá so với phương án lời nhất", "~2,3 tr"),
+    ("[4g] chỉ tiêu 97 sp: kết luận", "none_meets_goal (không phương án nào đạt chắc 80%)"),
+    ("[4g] phương án có xác suất đạt cao nhất", "continue ~70%"),
+    ("[4g] cái giá so với phương án lời nhất", "~3,97 tr"),
     ("[5] bỏ ràng buộc flash: đề xuất", "pause"),
     ("[5] cái giá của cam kết flash", "~1,1 tr"),
     ("[2a] hàng về sớm 1 ngày: kết luận", "không đổi (schedule_hours)"),
@@ -265,37 +268,36 @@ WHATIF_ITEMS = [
 API_ITEMS = [("POST /scenarios/run (CD002, 1.000 mẫu, đã có dự báo)", "~0,3 s")]
 
 
-def _db(tmp: Path, reuse: Path | None) -> tuple[duckdb.DuckDBPyConnection, Path, str]:
-    from app.ads_effect.iroas import estimate_all, write_estimates
-    from app.simulator import engine
+def _db(
+    tmp: Path, reuse: Path | None, light: bool = False
+) -> tuple[duckdb.DuckDBPyConnection, Path, str]:
     from eval import demo_whatif
 
-    if reuse is None:
+    if reuse is not None:
+        return demo_whatif.copy_db(tmp, reuse), tmp / "demo.duckdb", f"bản sao của {reuse}"
+    if light:
         conn = demo_whatif.build_db(tmp, backtest=False)
-        return conn, tmp / "demo.duckdb", "eval.demo_whatif.build_db (lịch sử + live tới 01:00)"
-    path = tmp / "demo.duckdb"
-    shutil.copy2(reuse, path)
-    wal = reuse.with_name(reuse.name + ".wal")
-    if wal.exists():
-        shutil.copy2(wal, path.with_name(path.name + ".wal"))
-    conn = duckdb.connect(str(path))
-    n = conn.execute("SELECT count(*) FROM iroas_estimates").fetchone()
-    if not n or not n[0]:
-        write_estimates(conn, estimate_all(conn).estimates)
-    engine.cache_clear()
-    return conn, path, f"bản sao của {reuse}"
+        return conn, tmp / "demo.duckdb", "BẢN NHẸ demo_whatif.build_db (không backtest/fit)"
+    conn = demo_whatif.build_full_db(tmp)
+    return (
+        conn,
+        tmp / "import" / "demo.duckdb",
+        "DB đầy đủ như demo.mjs (demo_import --replay-hour 0 --models)",
+    )
 
 
 def _actions(s: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {a["key"]: a for a in s["actions"]}
 
 
-def section_whatif(b: Board, tmp: Path, reuse: Path | None, run_api: bool) -> None:
+def section_whatif(
+    b: Board, tmp: Path, reuse: Path | None, run_api: bool, light: bool = False
+) -> None:
     from eval import demo_whatif
     from eval.demo_whatif import DAY_06, END_06, Variant
 
     src = "eval.demo_whatif (M3-mo-phong.md 'Sau sửa lỗi M3-whatif')"
-    conn, path, origin = _db(tmp, reuse)
+    conn, path, origin = _db(tmp, reuse, light)
     goal_id: str | None = None
     try:
         df = demo_whatif.ads_table(conn)
@@ -311,9 +313,9 @@ def section_whatif(b: Board, tmp: Path, reuse: Path | None, run_api: bool) -> No
         best1 = s1["best"] or ""
         b.add("whatif", WHATIF_ITEMS[1][0], "schedule_hours:0-2,12-14", f"{best1} ({s1['status']})",
               best1 == "schedule_hours:0-2,12-14", "khớp đúng", src)  # fmt: skip
-        b.near("whatif", WHATIF_ITEMS[2][0], 3.99e6, float(s1["gain_vs_continue"] or 0), 0.1e6,
+        b.near("whatif", WHATIF_ITEMS[2][0], 3.97e6, float(s1["gain_vs_continue"] or 0), 0.1e6,
                tr, src)  # fmt: skip
-        b.near("whatif", WHATIF_ITEMS[3][0], 1.23e6, float(s1["gain_vs_runner_up"] or 0), 0.1e6,
+        b.near("whatif", WHATIF_ITEMS[3][0], 1.22e6, float(s1["gain_vs_runner_up"] or 0), 0.1e6,
                tr, src, f"runner-up {s1['runner_up']}")  # fmt: skip
         p = s1["p"]
         b.add("whatif", WHATIF_ITEMS[4][0], "≈ 1", "—" if p is None else vn(p, 2),
@@ -323,21 +325,31 @@ def section_whatif(b: Board, tmp: Path, reuse: Path | None, run_api: bool) -> No
               "cấm" if not pause.get("feasible", True) else "được phép",
               not pause.get("feasible", True), "khớp đúng", src,
               ", ".join(pause.get("violations") or []))  # fmt: skip
+        # [4g] trên DB đầy đủ (phương án A): không phương án nào đạt P(bán đủ 97) ≥ 80%; app
+        # nói phương án có xác suất cao nhất và cái giá của nó so với phương án lời nhất
         s4, a4 = rows["4g"], _actions(rows["4g"])
-        b.add("whatif", WHATIF_ITEMS[6][0], "reduce_budget:0.3", f"{s4['best']} ({s4['status']})",
-              s4["best"] == "reduce_budget:0.3", "khớp đúng", src)  # fmt: skip
-        top = max(a["J"] for a in a4.values() if a["feasible"])
-        cost = top - a4[s4["best"]]["J"] if s4["best"] in a4 else float("nan")
-        b.near("whatif", WHATIF_ITEMS[7][0], 2.3e6, cost, 0.1e6, tr, src,
-               "E[J] lời nhất (khả thi) − E[J] đề xuất")  # fmt: skip
+        b.add("whatif", WHATIF_ITEMS[6][0], "none_meets_goal",
+              f"{s4['status']} (best {s4['best']})",
+              s4["status"] == "none_meets_goal" and s4["best"] is None, "khớp đúng", src,
+              "; ".join(f"{k} {pct(a['p_target'], 0)}" for k, a in a4.items()
+                        if a["feasible"] and a["p_target"] is not None))  # fmt: skip
+        ok4 = [a for a in a4.values() if a["feasible"] and a["p_target"] is not None]
+        top_p = max(ok4, key=lambda a: (a["p_target"], a["J"]))
+        top_j = max(ok4, key=lambda a: a["J"])
+        b.add("whatif", WHATIF_ITEMS[7][0], "continue ~70%",
+              f"{top_p['key']} {pct(top_p['p_target'], 1)}",
+              top_p["key"] == "continue" and abs(top_p["p_target"] - 0.70) <= 0.02,
+              "khớp phương án, ± 2 điểm", src)  # fmt: skip
+        b.near("whatif", WHATIF_ITEMS[8][0], 3.97e6, top_j["J"] - top_p["J"], 0.1e6, tr, src,
+               f"E[J] lời nhất ({top_j['key']}) − E[J] xác suất cao nhất")  # fmt: skip
         s5, a5 = rows["5"], _actions(rows["5"])
-        b.add("whatif", WHATIF_ITEMS[8][0], "pause", f"{s5['best']} ({s5['status']})",
+        b.add("whatif", WHATIF_ITEMS[9][0], "pause", f"{s5['best']} ({s5['status']})",
               s5["best"] == "pause", "khớp đúng", src)  # fmt: skip
         commit = a5["pause"]["J"] - a1[best1]["J"]
-        b.near("whatif", WHATIF_ITEMS[9][0], 1.1e6, commit, 0.1e6, tr, src,
+        b.near("whatif", WHATIF_ITEMS[10][0], 1.1e6, commit, 0.1e6, tr, src,
                "E[J] pause (bỏ flash) − E[J] đề xuất [1]")  # fmt: skip
         s2 = rows["2a"]
-        b.add("whatif", WHATIF_ITEMS[10][0], best1, f"{s2['best']} ({s2['status']})",
+        b.add("whatif", WHATIF_ITEMS[11][0], best1, f"{s2['best']} ({s2['status']})",
               s2["best"] == best1, "cùng đề xuất với [1]", src,
               f"hơn chạy tiếp {tr(float(s2['gain_vs_continue'] or 0))}")  # fmt: skip
         zb = rows["8a"]["zone_bar"]
@@ -348,7 +360,7 @@ def section_whatif(b: Board, tmp: Path, reuse: Path | None, run_api: bool) -> No
             if zb
             else ""
         )
-        b.add("whatif", WHATIF_ITEMS[11][0], "pause_better", verdict, verdict == "pause_better",
+        b.add("whatif", WHATIF_ITEMS[12][0], "pause_better", verdict, verdict == "pause_better",
               "khớp đúng", src, note)  # fmt: skip
         if run_api:
             from app.economics.goals import create_goal
@@ -415,6 +427,7 @@ def run(
     skip: set[str],
     live_hours: int,
     out: Path = OUT_JSON,
+    light: bool = False,
 ) -> dict[str, Any]:
     b = Board()
     t0 = time.perf_counter()
@@ -440,13 +453,14 @@ def run(
     with tempfile.TemporaryDirectory(prefix="pitch-whatif-") as tmp:
         api = "api" not in skip
         items = WHATIF_ITEMS + (API_ITEMS if api else [])
-        guarded("whatif", items, lambda: section_whatif(b, Path(tmp), reuse_db, api))
+        guarded("whatif", items, lambda: section_whatif(b, Path(tmp), reuse_db, api, light))
         if not api:
             b.mark("api", API_ITEMS, SKIP, "--skip api")
     result = {
         "size": size,
         "created_at": datetime.now(UTC).isoformat(),
         "reuse_db": str(reuse_db) if reuse_db else None,
+        "light": light,
         "skip": sorted(skip),
         "seconds": round(time.perf_counter() - t0, 1),
         "section_seconds": timings,
@@ -468,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--skip", default="", help=f"bỏ phần, phẩy: {','.join(SECTIONS)}")
     ap.add_argument("--live-hours", type=int, default=3, help="số giờ live đo (eval_data)")
     ap.add_argument("--out", type=Path, default=OUT_JSON)
+    ap.add_argument("--light", action="store_true", help="what-if trên bản nhẹ (số KHÁC pitch)")
     args = ap.parse_args(argv)
     skip = {s for s in args.skip.split(",") if s}
     unknown = skip - set(SECTIONS)
@@ -475,8 +490,15 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"--skip không biết: {', '.join(sorted(unknown))}")
     if args.reuse_db is not None and not args.reuse_db.is_file():
         ap.error(f"Không thấy {args.reuse_db}")
+    if args.light:
+        show("CẢNH BÁO: --light = bản nhẹ không backtest/fit, số what-if KHÁC pitch.")
     result = run(
-        args.size, reuse_db=args.reuse_db, skip=skip, live_hours=args.live_hours, out=args.out
+        args.size,
+        reuse_db=args.reuse_db,
+        skip=skip,
+        live_hours=args.live_hours,
+        out=args.out,
+        light=args.light,
     )
     show("\n=== Con số pitch (trên dữ liệu mô phỏng)\n")
     show(result["table"])

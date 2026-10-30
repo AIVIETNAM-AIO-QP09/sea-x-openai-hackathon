@@ -27,10 +27,10 @@
       {
         "source": "ads",
         "label": "Quảng cáo",
-        "as_of": "2026-11-11T01:00:00+07:00",
+        "as_of": "2026-11-10T21:00:00+07:00",
         "received_at": "2026-11-11T01:00:00+07:00",
-        "status": "fresh",
-        "lag_minutes": 0,
+        "status": "stale",
+        "lag_minutes": 240,
         "threshold_minutes": 180,
         "missing_skus": null
       },

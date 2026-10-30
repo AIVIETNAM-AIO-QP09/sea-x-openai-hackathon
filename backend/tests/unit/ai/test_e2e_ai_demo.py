@@ -1,8 +1,9 @@
 """M4 · AI flows on the ``demo`` data with the **real tools** and a scripted FakeClient.
 
 * 01:00 ngày 11.11 — what-if "nếu sếp giao chỉ tiêu 97 cái" (structured output → run_scenario
-  with a hypothetical ``sell_target`` goal): the conclusion moves from "chỉ chạy khung giờ"
-  to "giảm ngân sách 30%" (M3-whatif.md 4g), no goal is stored.
+  with a hypothetical ``sell_target`` goal), no goal is stored. On this fixture's light DB
+  (no backtest/fit) the conclusion moves to "giảm ngân sách 30%" (M3-whatif.md 4g); on the
+  full pitch DB (``AI_RECORD_DB``, M5 "Phương án A") no action reaches 80%.
 * 01:00 — injection test of 07 §7 with the note planted in the order file: the agent notes
   the strange request, does not advise turning all ads off, the draft is never written.
 * 14:00 — investigation "vì sao áo giữ nhiệt bán chậm": the 6-step checklist on the real
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -100,25 +102,7 @@ def test_whatif_sell_target_97(conn_0100: duckdb.DuckDBPyConnection, ai_settings
     # 2. the agent: baseline comparison, then the what-if run, then the answer
     def answer(req: LlmRequest) -> LlmResponse:
         out = tool_outputs(req)
-        base, wif = out["compare_actions"], out["run_scenario"]
-        sid = wif["source"]["id"]
-        rec = _rec(wif)
-        by = {r["key"]: r for r in wif["results"]}
-        best = (
-            by[f"reduce_budget:{rec['best']['pct']:g}"]
-            if rec["best"]["kind"] == "reduce_budget"
-            else None
-        )
-        sched = next(r for r in wif["results"] if r["key"].startswith("schedule_hours"))
-        assert best is not None
-        return FakeClient.say(
-            f"Hiện tại đề xuất là {_rec(base)['best_label'].lower()}"
-            f" [[src:{base['source']['id']}]]."
-            f" Theo kịch bản giả định chỉ tiêu 97 cái, nên {rec['best_label'].lower()}"
-            f" [[src:{sid}]]: xác suất bán đủ {_pct(best['p_target'])} [[src:{sid}]], còn chỉ"
-            f" chạy khung giờ chỉ đạt {_pct(sched['p_target'])} [[src:{sid}]]."
-            " Đây là giả định chưa xảy ra, mức tin cậy kịch bản."
-        )
+        return FakeClient.say(whatif_97_answer(out["compare_actions"], out["run_scenario"]))
 
     fc = FakeClient(
         [
@@ -142,11 +126,17 @@ def test_whatif_sell_target_97(conn_0100: duckdb.DuckDBPyConnection, ai_settings
         "kind": "sell_target",
         "target_units": 97,
         "hypothetical": True,
+        "sell_target_prob": pytest.approx(0.8),  # structured: "chắc 80%" can be grounded
     }
+    assert base["goal"]["sell_target_prob"] is None  # profit goal: no probability
     assert wif["is_scenario"] and not wif["persisted"] and wif["confidence"] == "scenario"
-    best = _rec(wif)["best"]
-    assert best["kind"] == "reduce_budget" and best["pct"] == pytest.approx(0.3)  # M3-whatif 4g
-    assert "giảm ngân sách 30%" in turn.text
+    if os.environ.get("AI_RECORD_DB"):  # full pitch DB (backtest + fit): M5 "Phương án A"
+        assert _rec(wif)["status"] == "none_meets_goal" and _rec(wif)["best"] is None
+        assert "không phương án nào đạt chắc 80%" in turn.text
+    else:  # light DB of this fixture (no backtest/fit): M3-whatif 4g
+        best = _rec(wif)["best"]
+        assert best["kind"] == "reduce_budget" and best["pct"] == pytest.approx(0.3)
+        assert "giảm ngân sách 30%" in turn.text
     # the AI never stores a goal: only the lead's goal exists
     goals = conn_0100.execute("SELECT confirmed_by, kind FROM goals").fetchall()
     assert goals == [("u-lead-1", "profit")]
@@ -301,22 +291,51 @@ DEMO_INVESTIGATE_Q = "Vì sao áo giữ nhiệt bán chậm?"
 DEMO_EXPLAIN_Q = "Vì sao nồi chiên chỉ chạy khung giờ?"
 
 
+def _tr(vnd: float) -> str:
+    return f"{vnd / 1e6:.2f}".replace(".", ",") + " triệu đồng"
+
+
+def whatif_97_answer(base: dict[str, Any], wif: dict[str, Any]) -> str:
+    """Scripted answer to "chỉ tiêu 97 cái", built only from structured tool values.
+
+    Full pitch DB (backtest + fit, M5 "Phương án A"): no action reaches the goal's probability
+    → say so, name the action with the highest probability, its probability and its cost vs
+    the most profitable action, suggest lowering the target or accepting the risk. Light DB
+    (no backtest/fit): an action meets the goal (reduce 30%) → the earlier answer."""
+    sid, rec, goal = wif["source"]["id"], _rec(wif), wif["goal"]
+    head = f"Hiện tại đề xuất là {_rec(base)['best_label'].lower()} [[src:{base['source']['id']}]]."
+    if rec["status"] == "none_meets_goal":
+        ok = [r for r in wif["results"] if r["feasible"] and r["p_target"] is not None]
+        top_p = max(ok, key=lambda r: (r["p_target"], r["objective"]["mean"]))
+        top_j = max(ok, key=lambda r: r["objective"]["mean"])
+        cost = top_j["objective"]["mean"] - top_p["objective"]["mean"]
+        return (
+            f"{head} Với chỉ tiêu {goal['target_units']} cái hôm nay, không phương án nào đạt"
+            f" chắc {_pct(goal['sell_target_prob'])} [[src:{sid}]]."
+            f" Khả năng cao nhất là {top_p['label'].lower()}: xác suất bán đủ"
+            f" {_pct(top_p['p_target'])} [[src:{sid}]], còn {top_j['label'].lower()} chỉ đạt"
+            f" {_pct(top_j['p_target'])} [[src:{sid}]]."
+            f" Cái giá: {top_p['label'].lower()} lời kém {top_j['label'].lower()} khoảng"
+            f" {_tr(cost)} [[src:{sid}]]."
+            " Nên hạ chỉ tiêu, hoặc chấp nhận rủi ro không đạt và cái giá đó."
+            " Đây là giả định chưa xảy ra, mức tin cậy kịch bản."
+        )
+    by = {r["key"]: r for r in wif["results"]}
+    best = by[rec["best"] and f"reduce_budget:{rec['best']['pct']:g}"]
+    sched = next(r for r in wif["results"] if r["key"].startswith("schedule_hours"))
+    return (
+        f"{head}"
+        f" Theo kịch bản giả định chỉ tiêu 97 cái, nên {rec['best_label'].lower()}"
+        f" [[src:{sid}]]: xác suất bán đủ {_pct(best['p_target'])} [[src:{sid}]], còn chỉ"
+        f" chạy khung giờ chỉ đạt {_pct(sched['p_target'])} [[src:{sid}]]."
+        " Đây là giả định chưa xảy ra, mức tin cậy kịch bản."
+    )
+
+
 def _whatif_script() -> list[Any]:
     def answer(req: LlmRequest) -> LlmResponse:
         out = tool_outputs(req)
-        base, wif = out["compare_actions"], out["run_scenario"]
-        sid, rec = wif["source"]["id"], _rec(wif)
-        by = {r["key"]: r for r in wif["results"]}
-        best = by[rec["best"] and f"reduce_budget:{rec['best']['pct']:g}"]
-        sched = next(r for r in wif["results"] if r["key"].startswith("schedule_hours"))
-        return FakeClient.say(
-            f"Hiện tại đề xuất là {_rec(base)['best_label'].lower()}"
-            f" [[src:{base['source']['id']}]]."
-            f" Theo kịch bản giả định chỉ tiêu 97 cái, nên {rec['best_label'].lower()}"
-            f" [[src:{sid}]]: xác suất bán đủ {_pct(best['p_target'])} [[src:{sid}]], còn chỉ"
-            f" chạy khung giờ chỉ đạt {_pct(sched['p_target'])} [[src:{sid}]]."
-            " Đây là giả định chưa xảy ra, mức tin cậy kịch bản."
-        )
+        return FakeClient.say(whatif_97_answer(out["compare_actions"], out["run_scenario"]))
 
     args = RunScenarioArgs(
         campaign_id="CD002",
@@ -414,7 +433,8 @@ def test_demo_recordings_record_and_replay(
         # same answer; chips point at this run's sources (scenario ids change per run)
         assert _no_chips(rep.text) == _no_chips(recorded[flow].text)
         assert rep.text.count("[[src:") == recorded[flow].text.count("[[src:")
-    assert "giảm ngân sách 30%" in recorded["whatif"].text
+    wif = recorded["whatif"].text
+    assert "không phương án nào đạt chắc 80%" in wif or "giảm ngân sách 30%" in wif, wif
     assert "AOGIUNHIET-M hết hàng" in recorded["investigate"].text
     assert "khung giờ" in recorded["explain"].text
 

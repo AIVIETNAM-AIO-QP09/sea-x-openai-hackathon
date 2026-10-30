@@ -90,7 +90,7 @@ Lý do số đổi: 2 giờ ads thêm (21:00–22:00 ngày 10/11) đi vào `esti
   | `demo_import --until …` + estimate-ads | 3,99 tr | reduce 30% (81% / 57%) | −251.137đ (lệch 0,51%) | đúng | gave_up (vượt dung sai 0,5%) |
   | `--replay-hour 0 --estimate-ads` (mới) | 3,99 tr | reduce 30% (81% / 57%) | −252.425đ = bản ghi | đúng | đúng |
 
-  Số pitch (`eval.pitch_numbers`, `eval.demo_whatif`) và 3 bản ghi AI đều đo trên DB **không** backtest/fit, đi đường phát lại. Có backtest/fit thì cảnh what-if "97 cái" (K4, không được bỏ) ra "không phương án nào đạt". Nên **không bản ghi nào phải ghi lại**; chỉ đổi cách dựng DB. `--models` vẫn còn để thử, script in cảnh báo.
+  *(Đã thay bằng "Phương án A" ở cuối file: demo giờ dựng DB đầy đủ, có backtest/fit.)* Số pitch (`eval.pitch_numbers`, `eval.demo_whatif`) và 3 bản ghi AI đều đo trên DB **không** backtest/fit, đi đường phát lại. Có backtest/fit thì cảnh what-if "97 cái" (K4, không được bỏ) ra "không phương án nào đạt". Nên **không bản ghi nào phải ghi lại**; chỉ đổi cách dựng DB. `--models` vẫn còn để thử, script in cảnh báo.
 - Hệ quả: lúc 01:00 Ads trễ 240 phút (huy hiệu "cũ hơn ngưỡng"), như đường phát lại ở Q1. Đúng với yêu cầu "giữ nguyên dữ liệu"; câu nói trong runbook.
 
 ## Q5. Bug tìm thấy khi diễn tập
@@ -116,3 +116,48 @@ Trang công khai (`web/` build `VITE_USE_FIXTURES=true`) trước đây dùng s�
 - **PII**: script quét sđt, email và mọi chuỗi tên/sđt/địa chỉ/ghi chú người mua lấy từ file đơn hàng; thấy là thoát mã 1. Lần ghi này: 0.
 - **Số thật hiện trên web** (khớp `eval.pitch_numbers`): CD002 `schedule_hours` 0–2h, 12–14h, hơn giảm 50% **1.226.007đ** ("khoảng 1,2 triệu"), hơn chạy tiếp ~3,97 tr, p = 1,00; pause và pause_until_restock "Không làm được" (`campaign_must_run`); ZoneBar `pause_better` (ngưỡng 0, khoảng 3,8–5,3 sp/giờ) kèm ghi chú "bị cấm". Nồi chiên tồn **76**, hết khoảng 16:00 (theo dự báo; lý do của đề xuất ghi 14:00 khi chạy tiếp). Cảnh báo lúc 01:00 chỉ có **1** (thiếu giá vốn 27 SKU) — chấp nhận số thật. Lật kết luận duy nhất: hàng dư ≤ −199.448đ/sp (không có điều kiện "hàng về" như fixture cũ, nên chế độ fixtures chỉ hiện thanh trượt hàng dư).
 - Giữ ví dụ minh họa soạn tay `rec-540`/`scn-2280` (CD002 ngày thường) và `rec-510`/`scn-2210` (ví dụ trang 10); màn So sánh ghi "Số liệu minh họa soạn tay" cho hai ca này, còn ca thật ghi "Ảnh chụp kết quả mô phỏng lúc 01:00 11.11". Nhãn "Dữ liệu mẫu" trên thanh trên giữ nguyên, tooltip nói rõ là ảnh chụp lúc 01:00.
+
+## Phương án A: demo chạy đúng DB đầy đủ như lúc chấm điểm (31/10)
+
+**Quyết định.** Con số pitch (WAPE 37%, nhãn 44 verified, iROAS…) đo trên hệ thống có backtest + fit. Demo phải chạy đúng hệ thống đó, kể cả khi một câu chuyện pitch đổi. Không nới logic mô phỏng hay grounding để giữ số cũ. Thay cho Q4 (DB không backtest/fit).
+
+**Đổi gì**
+- `scripts/demo.mjs` mặc định dựng DB đầy đủ: `app.demo_import --replay-hour 0 --models` (11.11 tới 00:59 qua thư mục phát lại như trước, rồi backtest + fit + estimate-ads). Đo: **3 phút 18 giây** (máy rảnh). `demo_import` in từng bước (`step i/3: backtest...`, `done … in … s`; chữ ASCII vì stdout có thể là pipe cp1252), `demo.mjs` in "đang dựng DB, … s" mỗi 30 giây. `--light` = bản nhẹ cũ (`--estimate-ads`), in **CẢNH BÁO "bản nhẹ, số khác pitch"** (bước DB ghi `CẢNH BÁO`, tóm tắt nhắc lại). `--models` không còn cần (chỉ in nhắc).
+- `eval.demo_whatif` mặc định dựng DB đầy đủ (`build_full_db`), `--db PATH` chạy trên bản sao DB có sẵn (`copy_db`), `--light` = bản nhẹ cũ. `eval.pitch_numbers` cùng mặc định đó (`--light` để thử nhanh). `eval.rehearsal` không có `--db`/`--base-url` thì tự dựng DB đầy đủ. `eval.record_fixtures` dựng `--replay-hour 0 --models` (trước là `--until … --models`, khác DB demo một chút).
+- Công cụ AI `run_scenario`/`compare_actions` trả thêm trường số `goal.sell_target_prob` (với `sell_target`; tham số của mục tiêu, không có thì lấy từ bảng tham số). Ngưỡng 80% trước chỉ có trong chữ `goal_note`, nên câu "không phương án nào đạt chắc 80%" bị chặn đúng luật. Luật grounding không đổi.
+
+**Đo trên DB đầy đủ** (`eval.demo_whatif --db <DB của demo_import --replay-hour 0 --models> --only 1,2a,4g,5,8a`):
+
+| Biến thể | Kết quả | So với trước (DB nhẹ) |
+|---|---|---|
+| [1] CD002 11.11 01:00 profit | `schedule_hours:0-2,12-14`, recommend, p = 1,00; hơn chạy tiếp **3.969.293đ (3,97 tr)**, hơn giảm 50% **1.217.012đ (1,22 tr)**; tạm dừng cấm; ZoneBar `pause_better` | không đổi kết luận (3,99 / 1,23 → 3,97 / 1,22, trong dung sai) |
+| [2a] hàng về sớm 1 ngày | vẫn `schedule_hours:0-2,12-14`, hơn chạy tiếp 3,46 tr | không đổi |
+| [4g] chỉ tiêu 97 sp | **`none_meets_goal`**, không phương án nào đạt P(bán đủ 97) ≥ 80% | **đổi**: trước giảm 30% đạt 81% |
+| [5] bỏ ràng buộc flash | `pause`, hơn giảm 50% 2,32 tr; cái giá cam kết = 1,26 tr − 0,157 tr = **1,10 tr** | không đổi |
+| [8a] ZoneBar CD020 06/11, V = 0 | `pause_better`, x* = 0,57, khoảng khi dừng 0,58–1,25 | không đổi verdict (trước x* 0,65, 0,67–1,21) |
+
+[4g] chi tiết (P(bán đủ 97 sp trước 24:00), E[J]):
+
+| Phương án | Khả thi | P đạt | E[J] |
+|---|---|---|---|
+| Chạy tiếp | có | **69,8%** (cao nhất) | −3.812.114đ |
+| Giảm ngân sách 30% | có | 67,0% | −2.154.410đ |
+| Giảm ngân sách 50% | có | 63,9% | −1.059.832đ |
+| Chỉ chạy khung giờ 00–02h, 12–14h | có | 50,5% | **+157.179đ** (lời nhất) |
+| Tạm dừng / tạm dừng tới khi hàng về | cấm (flash) | 39,8% | +1.259.433đ |
+
+Phương án có xác suất cao nhất là **chạy tiếp (70%)**, vẫn dưới 80%. Cái giá so với phương án lời nhất (khung giờ): **3.969.293đ ≈ 3,97 triệu**. Lý do hệ thống trả (`recommendation.reasons`): "Các lựa chọn này chưa giải quyết được mục tiêu"; "Xác suất bán đủ 97 sp: Chạy tiếp: 70%; Tạm dừng: 40%; Giảm ngân sách 30%: 67%; Giảm ngân sách 50%: 64%; Chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00: 50%; Tạm dừng tới khi hàng về: 40%"; "Xác suất bán đủ 97 sp là 70% < 80%"; "Dự báo nhu cầu ở mức 'reference'". Không có `best`, không ZoneBar.
+
+**3 bản ghi AI ghi lại** (FakeClient, `AI_WRITE_RECORDINGS=1 AI_RECORD_DB=<DB đầy đủ>`; xóa bản cũ, mỗi luồng 1 file; quét: 0 key, 0 PII):
+- `whatif` "Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao?": "Hiện tại đề xuất là chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00. Với chỉ tiêu 97 cái hôm nay, không phương án nào đạt chắc 80%. Khả năng cao nhất là chạy tiếp: xác suất bán đủ 70%, còn chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 chỉ đạt 50%. Cái giá: chạy tiếp lời kém chỉ chạy theo khung giờ … khoảng 3,97 triệu đồng. Nên hạ chỉ tiêu, hoặc chấp nhận rủi ro không đạt và cái giá đó. Đây là giả định chưa xảy ra, mức tin cậy kịch bản." Kiểm số **17/17** (80% ← `goal.sell_target_prob`, 97 ← `goal.target_units`, 70% / 50% ← `results[].p_target`, 3,97 triệu ← hiệu `results[].objective.mean` cùng lần gọi).
+- `explain` "Vì sao nồi chiên chỉ chạy khung giờ?": 9/9 (p 100%, chi ads chạy cả ngày 5.299.234đ vs khung giờ 1.180.332đ, điểm đổi hàng dư ≤ −199.969đ/sp).
+- `investigate` "Vì sao áo giữ nhiệt bán chậm?" (14:00, `jump 13`): 10/10 (AOGIUNHIET-M hết hàng từ 13:00, điều chỉnh tồn 11:00 −74 sp, L 27 / S 11 sp trong 3 giờ, CD005 vẫn chạy, hàng về 14/11).
+- `AI_RECORD_DB` giờ chép cả `live_stream` bên cạnh DB và chuyển `live_cursor` sang bản chép, để mốc 14:00 nối tiếp đúng con trỏ như `jump 13` của server (trước đó đọc lại thư mục mới từ dòng 0).
+
+**Fixtures web** chụp lại trên DB đầy đủ đường phát lại: CD002 hơn chạy tiếp 3.969.293đ (như cũ), hơn giảm 50% **1.217.012đ** (trước 1.226.007đ, DB `--until`), web vẫn ghi "khoảng 1,2 triệu". Cảnh báo lúc 01:00 thành **2** (thiếu giá vốn **21** SKU, ads trễ 240 phút) vì đúng đường phát lại (Q1); test `App.test.tsx` sửa "Cảnh báo 2".
+
+**Kiểm**: `eval.pitch_numbers` (mặc định, DB đầy đủ tự dựng) **31/31 ĐẠT**, 372 s. Dòng đổi kỳ vọng: [1] 3,99 → 3,97 tr, 1,23 → 1,22 tr; [4g] "reduce_budget 0.3" + "~2,3 tr" thay bằng 3 dòng: kết luận `none_meets_goal`, phương án xác suất cao nhất `continue ~70%` (đo 69,8%), cái giá so với phương án lời nhất ~3,97 tr (đo 3,97). `eval.rehearsal` bước c whatif kiểm "không phương án nào đạt chắc 80%", "chạy tiếp: xác suất bán đủ 70%", "3,97 triệu"; bước b hơn chạy tiếp 3,97 ± 0,1 tr.
+
+**Lời pitch đề xuất cho cảnh "chỉ tiêu 97"** (người nói):
+
+> "Giả sử sếp giao 97 cái nồi chiên hôm nay. Hệ thống không chiều theo chỉ tiêu: không cách nào chắc đạt; cách có khả năng nhất là chạy quảng cáo cả ngày, cũng chỉ khoảng 70%, và mất gần 4 triệu tiền lãi so với chỉ chạy khung giờ. Hạ chỉ tiêu hay chấp nhận rủi ro là quyết định của con người, nhưng giờ cái giá thật đã nằm trên bàn."

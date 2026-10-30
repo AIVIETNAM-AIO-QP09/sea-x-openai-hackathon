@@ -1,15 +1,19 @@
 """What-if cho kịch bản demo (pitch 31/10) bằng bộ mô phỏng THẬT.
 
-Dựng DB ``demo`` như ``tests/e2e/test_noichien_1111.py`` (lịch sử + live 11.11 tới 01:00,
-ước lượng iROAS), rồi chạy :func:`app.simulator.service.run_simulation` cho các biến thể:
+Mặc định dựng DB ``demo`` ĐẦY ĐỦ như ``scripts/demo.mjs`` (``app.demo_import --replay-hour 0
+--models``: lịch sử + live 11.11 tới 01:00 qua thư mục phát lại, backtest + fit + ước lượng
+iROAS; "phương án A", docs/quyet-dinh/M5-chuan-bi-demo.md), rồi chạy
+:func:`app.simulator.service.run_simulation` cho các biến thể:
 gốc CD002, hàng về sớm/trễ, giá trị hàng dư V, đổi mục tiêu, bỏ ràng buộc flash, CD002 ngày
 thường, CD004 ngày thường, chiến dịch ngày thường có iROAS biên cao hơn hòa vốn.
 
 Cột "thật" lấy từ ``ground_truth/chien_dich_that.csv`` (chỉ eval/ được đọc).
 
     cd backend
-    uv run python -m eval.demo_whatif                 # ~1–2 phút
-    uv run python -m eval.demo_whatif --backtest      # thêm backtest dự báo (nhãn đúng hơn)
+    uv run python -m eval.demo_whatif                 # DB đầy đủ như demo.mjs, ~5–15 phút
+    uv run python -m eval.demo_whatif --db PATH       # bản sao DB demo có sẵn (đầy đủ)
+    uv run python -m eval.demo_whatif --light         # bản nhẹ, không backtest/fit (~1–2 phút):
+                                                      # số KHÁC pitch
     uv run python -m eval.demo_whatif --json out.json # thêm bản JSON
 """
 
@@ -17,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -76,7 +82,53 @@ def tr(x: float) -> str:
 
 
 # ---------------------------------------------------------------------- DB
+BACKEND = Path(__file__).resolve().parents[1]
+
+
+def build_full_db(root: Path) -> duckdb.DuckDBPyConnection:
+    """DB như ``scripts/demo.mjs`` mặc định (phương án A): ``app.demo_import --replay-hour 0
+    --models`` vào ``root/import`` (backtest + fit + ước lượng iROAS)."""
+    t0 = time.perf_counter()
+    out = root / "import"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.demo_import",
+            "--shop",
+            str(mock_dir("demo")),
+            "--output",
+            str(out),
+            "--replay-hour",
+            "0",
+            "--models",
+        ],
+        cwd=BACKEND,
+        check=True,
+    )
+    conn = duckdb.connect(str(out / "demo.duckdb"))
+    engine.cache_clear()
+    show(f"DB demo đầy đủ dựng xong trong {time.perf_counter() - t0:.0f} s")
+    return conn
+
+
+def copy_db(root: Path, src: Path) -> duckdb.DuckDBPyConnection:
+    """Bản sao của một DB demo có sẵn (không ghi vào file gốc)."""
+    path = root / "demo.duckdb"
+    shutil.copy2(src, path)
+    wal = src.with_name(src.name + ".wal")
+    if wal.exists():
+        shutil.copy2(wal, path.with_name(path.name + ".wal"))
+    conn = duckdb.connect(str(path))
+    n = conn.execute("SELECT count(*) FROM iroas_estimates").fetchone()
+    if not n or not n[0]:
+        write_estimates(conn, estimate_all(conn).estimates)
+    engine.cache_clear()
+    return conn
+
+
 def build_db(root: Path, *, backtest: bool) -> duckdb.DuckDBPyConnection:
+    """Bản nhẹ (không fit; backtest tùy chọn): số what-if KHÁC pitch, chỉ để thử nhanh."""
     t0 = time.perf_counter()
     conn = duckdb.connect(str(root / "demo.duckdb"))
     migrate(conn)
@@ -471,14 +523,25 @@ def variants_cd002(v_normal: dict[str, float]) -> list[Variant]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="What-if cho kịch bản demo (pitch).")
-    ap.add_argument("--backtest", action="store_true", help="chạy backtest dự báo trước")
+    ap.add_argument("--db", type=Path, default=None, help="DB demo 01:00 có sẵn (được chép)")
+    ap.add_argument(
+        "--light", action="store_true", help="bản nhẹ không backtest/fit: số KHÁC pitch"
+    )
+    ap.add_argument("--backtest", action="store_true", help="với --light: thêm backtest")
     ap.add_argument("--json", type=Path, default=None, help="ghi kết quả JSON")
     ap.add_argument("--only", default=None, help="danh sách id biến thể, phẩy")
     ap.add_argument("--scan", action="store_true", help="quét mọi chiến dịch (thêm ~1 phút)")
     args = ap.parse_args(argv)
     rows: list[Row] = []
     with tempfile.TemporaryDirectory(prefix="whatif_") as tmp:
-        conn = build_db(Path(tmp), backtest=args.backtest)
+        if args.db is not None:
+            conn = copy_db(Path(tmp), args.db)
+            show(f"Dùng bản sao của {args.db}")
+        elif args.light:
+            show("CẢNH BÁO: bản nhẹ (không backtest/fit), số khác pitch.")
+            conn = build_db(Path(tmp), backtest=args.backtest)
+        else:
+            conn = build_full_db(Path(tmp))
         df = ads_table(conn)
         show("\n=== iROAS ước lượng vs hòa vốn (thật = ground_truth)")
         top = df[df.breakeven.notna()].sort_values("ratio_marg", ascending=False)

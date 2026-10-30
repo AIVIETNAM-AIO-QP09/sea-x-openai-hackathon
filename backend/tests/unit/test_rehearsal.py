@@ -83,3 +83,22 @@ def test_ai_turn_must_be_replayed_grounded_and_sourced() -> None:
         assert "grounding" in str(e)
     else:  # pragma: no cover
         raise AssertionError("grounding lỗi phải làm bước LỖI")
+
+
+def test_demo_recordings_say_what_the_rehearsal_checks() -> None:
+    """One recording per demo flow, and its final answer has the phrases step c / f check
+    (the whatif answer of the full pitch DB, M5 "Phương án A")."""
+    from app.ai.client import RECORDINGS_DIR
+
+    must = {
+        "whatif": rh.WHATIF_MUST,
+        "explain": ["khung giờ"],
+        "investigate": ["AOGIUNHIET-M", "hết hàng"],
+    }
+    for flow, phrases in must.items():
+        files = sorted((RECORDINGS_DIR / flow).glob("*.json"))
+        assert len(files) == 1, (flow, files)
+        rec = json.loads(files[0].read_text(encoding="utf-8"))
+        text = rec["steps"][-1]["response"]["text"]
+        for m in phrases:
+            assert m in text, (flow, m)

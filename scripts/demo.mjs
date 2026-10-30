@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // Một lệnh chuẩn bị demo pitch MegaDay Twin (M5). Chạy ở gốc repo.
 //
-//   node scripts/demo.mjs [--db <file .duckdb>] [--out <thư mục mới>] [--models]
+//   node scripts/demo.mjs [--db <file .duckdb>] [--out <thư mục mới>] [--light]
 //                         [--skip-goal] [--skip-warm] [--no-web]
 //                         [--api-port 8000] [--web-port 5173]
 //
 // Các bước:
-//   1. DB demo: dựng mới bằng app.demo_import --replay-hour 0 --estimate-ads (lịch sử + 11.11
-//      qua đúng thư mục phát lại tới 00:59, tức 01:00; ước lượng iROAS) vào thư mục MỚI
-//      backend/data/pitch-<thời gian> (không bao giờ ghi đè), hoặc dùng DB có sẵn với --db.
-//      --models thêm backtest + fit: KHÔNG dùng cho pitch (số what-if "97 cái" và bản ghi AI
-//      explain đo trên DB không có backtest/fit; xem docs/quyet-dinh/M5-chuan-bi-demo.md Q4).
+//   1. DB demo ĐẦY ĐỦ (phương án A, như lúc chấm điểm): app.demo_import --replay-hour 0 --models
+//      (lịch sử + 11.11 qua đúng thư mục phát lại tới 00:59, tức 01:00; backtest + fit + ước lượng
+//      iROAS; ~3–5 phút, máy bận 5–10 phút; in tiến độ) vào thư mục MỚI backend/data/pitch-<thời gian> (không bao
+//      giờ ghi đè), hoặc dùng DB có sẵn với --db. Số pitch và 3 bản ghi AI đo trên DB này.
+//      --light: bản nhẹ (--estimate-ads, không backtest/fit, ~1–3 phút) khi cần nhanh: số what-if
+//      và bản ghi AI KHÔNG khớp pitch (docs/quyet-dinh/M5-chuan-bi-demo.md "Phương án A").
 //   2. Bật backend với AI_ENABLED=true, AI_MODE=replay, DEMO_MODE=true, LIVE_ENABLED=true,
 //      LIVE_DIR=<thư mục DB>/live_stream (riêng, không lẫn live_stream cũ của replay.js).
 //      Biến môi trường chỉ truyền cho tiến trình con; backend/.env không bị sửa.
@@ -142,9 +143,10 @@ async function waitHealth(child, timeoutMs = 180_000) {
 }
 
 const steps = [];
+const LABEL = { ok: 'ĐẠT', skip: 'BỎ QUA', warn: 'CẢNH BÁO', error: 'LỖI' };
 const mark = (name, status, detail = '') => {
   steps.push({ name, status, detail });
-  log('prep', `${status === 'ok' ? 'ĐẠT' : status === 'skip' ? 'BỎ QUA' : 'LỖI'} · ${name}${detail ? ` · ${detail}` : ''}`);
+  log('prep', `${LABEL[status] ?? 'LỖI'} · ${name}${detail ? ` · ${detail}` : ''}`);
 };
 
 const children = [];
@@ -166,14 +168,18 @@ async function prepare() {
   } else {
     const out = path.resolve(backend, opt('--out', path.join('data', `pitch-${stamp()}`)));
     if (fs.existsSync(out)) throw new Error(`${out} đã có; chọn --out mới (không ghi đè).`);
-    const models = flag('--models');
-    log('prep', `Dựng DB demo tới 01:00 ngày 11.11 vào ${path.relative(root, out)} (ước lượng iROAS${models ? ', backtest, fit' : ''}: vài phút)…`);
+    const light = flag('--light');
+    if (flag('--models')) log('prep', '--models không còn cần: mặc định đã dựng DB đầy đủ (backtest + fit).');
+    if (light) log('prep', 'CẢNH BÁO: --light = BẢN NHẸ (không backtest/fit), SỐ KHÁC PITCH; bản ghi AI có thể ra "ngoại tuyến".');
+    log('prep', `Dựng DB demo ${light ? 'NHẸ' : 'đầy đủ'} tới 01:00 ngày 11.11 vào ${path.relative(root, out)} (${light ? 'ước lượng iROAS, ~1–3 phút' : 'backtest + fit + ước lượng iROAS, ~3–5 phút; máy bận thì lâu hơn'})…`);
     const t0 = Date.now();
-    const args = ['run', 'python', '-m', 'app.demo_import', '--shop', shop, '--output', out, '--replay-hour', '0', models ? '--models' : '--estimate-ads'];
-    const code = await waitExit(run('prep', 'uv', args, backend, {}, { filter: (l) => !l.startsWith('{') || /ingest_done|backtest|fit|estimate/.test(l) }));
+    const args = ['run', 'python', '-m', 'app.demo_import', '--shop', shop, '--output', out, '--replay-hour', '0', light ? '--estimate-ads' : '--models'];
+    const child = run('prep', 'uv', args, backend, {}, { filter: (l) => !l.startsWith('{') || /ingest_done/.test(l) });
+    const tick = setInterval(() => log('prep', `… đang dựng DB, ${Math.round((Date.now() - t0) / 1000)} s`), 30_000);
+    const code = await waitExit(child).finally(() => clearInterval(tick));
     if (code !== 0) throw new Error(`demo_import lỗi (mã ${code}).`);
     db = path.join(out, 'demo.duckdb');
-    mark('DB demo', 'ok', `${path.relative(root, db)} (${Math.round((Date.now() - t0) / 1000)} s${models ? ', CÓ backtest/fit: số what-if 97 và bản ghi explain sẽ lệch' : ''})`);
+    mark('DB demo', light ? 'warn' : 'ok', `${path.relative(root, db)} (${Math.round((Date.now() - t0) / 1000)} s${light ? ', BẢN NHẸ: số khác pitch' : ', đầy đủ: backtest + fit + iROAS'})`);
   }
 
   // 2. backend
@@ -254,7 +260,8 @@ function summary(db) {
     `DB:   ${path.relative(root, db)}   (bật lại không dựng: node scripts/demo.mjs --db ${path.relative(root, db)}${p})`,
     '',
     'Các bước:',
-    ...steps.map((s) => `  ${s.status === 'ok' ? 'ĐẠT  ' : s.status === 'skip' ? 'BỎ QUA' : 'LỖI  '} ${s.name}${s.detail ? ` · ${s.detail}` : ''}`),
+    ...steps.map((s) => `  ${(LABEL[s.status] ?? 'LỖI').padEnd(8)} ${s.name}${s.detail ? ` · ${s.detail}` : ''}`),
+    ...(steps.some((s) => s.status === 'warn') ? ['', '  !! BẢN NHẸ (--light): số what-if và bản ghi AI KHÁC PITCH. Không dùng để pitch.'] : []),
     '',
     'Nhảy giờ (terminal khác):',
     `  node scripts/demo.mjs jump 10${p}    dữ liệu tới 10:59 → cảnh báo bình nước (nói "khoảng 11 giờ")`,

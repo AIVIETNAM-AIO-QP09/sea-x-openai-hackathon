@@ -3,7 +3,7 @@
     "campaign_id": "CD002",
     "name": "[Tìm kiếm] Nồi chiên mini + giấy lót",
     "type": "Tìm kiếm",
-    "daily_budget_vnd": 5592000,
+    "daily_budget_vnd": 1864000,
     "sku_level_control": false,
     "skus": [
       "COMBO-NOICHIEN",
@@ -12,20 +12,20 @@
     ],
     "status": "Đang chạy",
     "status_code": "running",
-    "status_at": "2026-11-11T00:00:00+07:00",
-    "spend_today_vnd": 282610,
-    "budget_used_pct": 5.1,
+    "status_at": "2026-11-10T20:00:00+07:00",
+    "spend_today_vnd": null,
+    "budget_used_pct": null,
     "iroas": {
-      "estimate_id": "iroas-01M66S0N028TG2A5D1C01HCJED",
-      "mean": 4.415508887121634,
-      "p10": 3.329662310115614,
-      "p90": 5.389712879928472,
-      "platform_roas": 8.089159807429699,
+      "estimate_id": "iroas-01M67F7GW91MS4QEEYPASQCWS2",
+      "mean": 4.415310110754519,
+      "p10": 3.3303382154235126,
+      "p90": 5.390543443518652,
+      "platform_roas": 8.092039943166185,
       "breakeven_iroas": 4.9607031345987815,
       "confidence": "reference"
     },
     "recommendation": {
-      "recommendation_id": "rec-01M66S103EFSEPVWF431A97S0Z",
+      "recommendation_id": "rec-01M67FCMEZT0859NR57714PME4",
       "status": "recommend",
       "best": {
         "kind": "schedule_hours",
@@ -42,7 +42,7 @@
         ]
       },
       "confidence": "reference",
-      "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+      "scenario_id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
       "created_at": "2026-11-11T01:00:00+07:00",
       "data_as_of": "2026-11-11T01:00:00+07:00"
     },
@@ -119,7 +119,7 @@
       }
     ],
     "goal": {
-      "goal_id": "goal-01M66S0S7208RH0Z7G6JA3DDVY",
+      "goal_id": "goal-01M67FC48PSYTFRR9D1C4FPD2F",
       "kind": "profit",
       "label": "Lợi nhuận tới 00:00 12/11",
       "deadline": "2026-11-12T00:00:00+07:00",

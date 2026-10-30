@@ -5,9 +5,11 @@
 * ``demo_ai_dbs`` (session, e2e) — the ``demo`` history loaded by the real pipeline, then
   the 11.11 live stream up to 00:59 (file ``0100``) and a copy advanced to 13:59
   (file ``1400``), the two moments of the pitch script (05 §10, 07 §4.3).
-  ``AI_RECORD_DB=<demo.duckdb>``: start from a copy of that DB instead (the pitch DB of
-  ``scripts/demo.mjs`` / ``app.demo_import --models``, 01:00), used to re-record the demo
-  answers on the exact state of the demo (M5-chuan-bi-demo.md).
+  ``AI_RECORD_DB=<demo.duckdb>``: start from a copy of that DB instead (the full pitch DB of
+  ``scripts/demo.mjs`` = ``app.demo_import --replay-hour 0 --models``, 01:00), used to
+  re-record the demo answers on the exact state of the demo (M5-chuan-bi-demo.md
+  "Phương án A"). Its ``live_stream`` folder is copied too and the live cursor moved to the
+  copy, so 13:59 continues from the same cursor as the server's ``jump 13``.
 """
 
 from __future__ import annotations
@@ -58,7 +60,20 @@ def demo_ai_dbs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     p1 = root / "demo_0100.duckdb"
     given = os.environ.get("AI_RECORD_DB")
     if given:  # the pitch DB as built for the demo (models included), never written
-        shutil.copy(given, p1)
+        src = Path(given).resolve()
+        shutil.copy(src, p1)
+        wal = src.with_name(src.name + ".wal")
+        if wal.exists():
+            shutil.copy(wal, p1.with_name(p1.name + ".wal"))
+        live = src.parent / "live_stream"
+        if live.is_dir():  # same replay folder + cursor as the demo server (LIVE_DIR)
+            shutil.copytree(live, root / "live_stream")
+            conn = duckdb.connect(str(p1))
+            conn.execute(
+                "UPDATE live_cursor SET file = replace(file, ?, ?)",
+                [live.as_posix() + "/", (root / "live_stream").resolve().as_posix() + "/"],
+            )
+            conn.close()
     else:
         conn = duckdb.connect(str(p1))
         load_mock(conn, "demo", build_panel=False)

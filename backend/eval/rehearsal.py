@@ -8,15 +8,16 @@ Dùng (trong ``backend/``)::
     # tự dựng app trong process (TestClient) trên bản sao của một DB demo 01:00
     uv run python -m eval.rehearsal --db data/pitch-0100/demo.duckdb
 
-    # không có DB: tự dựng như demo.mjs (app.demo_import --replay-hour 0) vào thư mục tạm
+    # không có DB: tự dựng như demo.mjs (app.demo_import --replay-hour 0 --models) vào thư mục tạm
     uv run python -m eval.rehearsal
 
 Mỗi lượt (mặc định 2 lượt, lượt sau chạy tiếp sau bước g "về đầu"):
 
 a. ``/freshness`` + Tổng quan ca ở 01:00 ngày 11.11;
-b. CD002: khuyến nghị ``schedule_hours:0-2,12-14``, hơn ``continue`` ~3,99 tr, tạm dừng bị cấm,
+b. CD002: khuyến nghị ``schedule_hours:0-2,12-14``, hơn ``continue`` ~3,97 tr, tạm dừng bị cấm,
    có ZoneBar (cũng làm nóng màn So sánh);
-c. AI replay ``explain`` + ``whatif`` (gõ nguyên văn), grounding đạt, có nguồn;
+c. AI replay ``explain`` + ``whatif`` (gõ nguyên văn), grounding đạt, có nguồn; ``whatif`` "chỉ
+   tiêu 97" trên DB đầy đủ: không phương án nào đạt chắc 80%, cao nhất là chạy tiếp 70%;
 d. quyết định từ khuyến nghị CD002: operator tạo + gửi, lead khác duyệt, lead tự duyệt → 403;
 e. ``jump`` 10 (dữ liệu tới 10:59) → cảnh báo bình nước bán vượt dự báo;
 f. ``jump`` 13 (tới 13:59) → cảnh báo áo size M hết hàng khi CD005 vẫn chạy; AI replay
@@ -53,7 +54,9 @@ Q_EXPLAIN = "Vì sao nồi chiên chỉ chạy khung giờ?"
 Q_WHATIF = "Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao?"
 Q_INVESTIGATE = "Vì sao áo giữ nhiệt bán chậm?"
 CD002_BEST = "schedule_hours:0-2,12-14"
-GAIN_VS_CONTINUE = 3.99e6  # runbook K4, ± 0,1 tr (cùng dung sai eval.pitch_numbers)
+GAIN_VS_CONTINUE = 3.97e6  # runbook K4, ± 0,1 tr (cùng dung sai eval.pitch_numbers)
+# whatif "chỉ tiêu 97" trên DB đầy đủ (M5 "Phương án A"): không phương án nào đạt, cái giá thật
+WHATIF_MUST = ["không phương án nào đạt chắc 80%", "chạy tiếp: xác suất bán đủ 70%", "3,97 triệu"]
 GAIN_TOL = 0.1e6
 
 OPERATOR = ("op-demo", "operator")
@@ -237,7 +240,7 @@ def step_c(api: Api, st: State) -> str:
     ex = api.post("/ai/chat", {"flow": "explain", "message": Q_EXPLAIN, "context": ctx})["data"]
     r1 = _ai_ok(ex, must=["khung giờ"])
     wi = api.post("/ai/chat", {"flow": "whatif", "message": Q_WHATIF, "context": ctx})["data"]
-    r2 = _ai_ok(wi, must=["giảm ngân sách 30%", "81%"])
+    r2 = _ai_ok(wi, must=WHATIF_MUST)
     return f"explain: {r1}; whatif: {r2}"
 
 
@@ -386,8 +389,8 @@ def http_client(base_url: str) -> Iterator[Any]:
 
 
 def build_demo_db(out: Path) -> Path:
-    """Same DB as ``scripts/demo.mjs``: ``app.demo_import --replay-hour 0 --estimate-ads``
-    (01:00 through the replay folder) into ``out`` (new directory)."""
+    """Same DB as ``scripts/demo.mjs``: ``app.demo_import --replay-hour 0 --models``
+    (01:00 through the replay folder; backtest + fit + iROAS) into ``out`` (new directory)."""
     subprocess.run(
         [
             sys.executable,
@@ -399,7 +402,7 @@ def build_demo_db(out: Path) -> Path:
             str(out),
             "--replay-hour",
             "0",
-            "--estimate-ads",
+            "--models",
         ],
         cwd=BACKEND,
         check=True,
