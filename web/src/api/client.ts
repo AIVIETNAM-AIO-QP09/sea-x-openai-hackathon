@@ -16,7 +16,12 @@ export class ApiError extends Error {
   }
 }
 
-/** Maps an API path (without query string) to a fixture file in ./fixtures. */
+/**
+ * Maps an API path (without query string) to a fixture file in ./fixtures. The files are a
+ * snapshot of the real API at 01:00 on 11.11 (backend/eval/record_fixtures.py), except the
+ * illustrative Compare cases rec-540/scn-2280 (CD002 on a normal day) and rec-510/scn-2210
+ * (page-10 example), which are hand-written (M3-web.md).
+ */
 const FIXTURE_ROUTES: Record<string, string> = {
   '/health': 'health',
   '/me': 'me',
@@ -24,28 +29,39 @@ const FIXTURE_ROUTES: Record<string, string> = {
   '/live/status': 'live-status',
   '/skus': 'skus',
   '/recommendations': 'recommendations',
-  '/recommendations/rec-551': 'recommendation-rec-551',
-  '/scenarios/scn-2291': 'scenario-scn-2291',
-  // Illustrative Compare cases (M3-web.md): CD002 on a normal day, page-10 example.
-  '/recommendations/rec-540': 'recommendation-rec-540',
-  '/scenarios/scn-2280': 'scenario-scn-2280',
-  '/recommendations/rec-510': 'recommendation-rec-510',
-  '/scenarios/scn-2210': 'scenario-scn-2210',
-  '/campaigns/CD002': 'campaign-CD002',
   '/alerts': 'alerts',
 };
 
+/** /recommendations/{id} → recommendation-{id}.json, and the same for scenarios, campaigns, skus. */
+const FIXTURE_BY_ID: [RegExp, string][] = [
+  [/^\/recommendations\/([^/]+)$/, 'recommendation'],
+  [/^\/scenarios\/([^/]+)$/, 'scenario'],
+  [/^\/campaigns\/([^/]+)$/, 'campaign'],
+  [/^\/skus\/([^/]+)$/, 'sku'],
+];
+
 const fixtureLoaders = import.meta.glob<unknown>('./fixtures/*.json', { import: 'default' });
+
+function fixtureName(bare: string): string | undefined {
+  const fixed = FIXTURE_ROUTES[bare];
+  if (fixed) return fixed;
+  for (const [re, kind] of FIXTURE_BY_ID) {
+    const m = re.exec(bare);
+    if (m) return `${kind}-${decodeURIComponent(m[1] ?? '')}`;
+  }
+  return undefined;
+}
 
 async function loadFixture(path: string): Promise<unknown> {
   const bare = path.split('?')[0] ?? path;
-  const name = FIXTURE_ROUTES[bare];
+  const name = fixtureName(bare);
   const loader = name ? fixtureLoaders[`./fixtures/${name}.json`] : undefined;
   if (loader) {
     // structuredClone keeps callers from mutating the shared fixture module.
     return structuredClone(await loader());
   }
-  // GET /skus/{sku}: answer from the list fixture (the detail adds fields the UI reads as optional).
+  // GET /skus/{sku} without its own file: answer from the list fixture (the detail adds
+  // fields the UI reads as optional).
   const skuMatch = /^\/skus\/([^/]+)$/.exec(bare);
   const listLoader = fixtureLoaders['./fixtures/skus.json'];
   if (skuMatch && listLoader) {

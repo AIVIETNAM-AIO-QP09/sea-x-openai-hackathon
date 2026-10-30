@@ -8,55 +8,45 @@ Phân vai: một người nói, một người bấm. Người bấm không nói
 
 ## 1. Chuẩn bị trước giờ pitch (T−1 ngày hoặc sáng hôm đó)
 
-Chạy trong `backend/`. Máy demo đã `uv sync`, `npm ci` trong `web/`.
+Máy demo đã `uv sync` trong `backend/`, `npm ci` trong `web/`. Không cần sửa `backend/.env`: mọi biến demo được `demo.mjs` truyền thẳng cho tiến trình con.
 
-1. **Dựng DB demo tới 01:00 ngày 11.11** (thư mục mới mỗi lần, không bao giờ ghi đè):
+1. **Một lệnh dựng DB + bật demo** (ở gốc repo):
+
+   ```powershell
+   node scripts/demo.mjs
+   ```
+
+   Script làm lần lượt và in ĐẠT/LỖI từng bước:
+   - dựng DB mới `backend/data/pitch-<thời gian>/demo.duckdb` (không bao giờ ghi đè): lịch sử + 11.11 tới 00:59 **qua đúng thư mục phát lại** (`app.demo_import --replay-hour 0 --estimate-ads`, ~1–3 phút) và ước lượng iROAS. **Không** backtest/fit: số what-if "97 cái" và bản ghi AI được đo trên DB như vậy (lý do: [M5-chuan-bi-demo.md](../quyet-dinh/M5-chuan-bi-demo.md) Q4);
+   - bật backend với `APP_ENV=demo`, `AI_ENABLED=true`, `AI_MODE=replay`, `DEMO_MODE=true`, `LIVE_ENABLED=true`, `LIVE_DIR=<thư mục DB>/live_stream` (riêng, không lẫn `live_stream/` cũ của `replay.js`);
+   - lead-1 đặt mục tiêu profit CD002 (hạn 24:00 ngày 11.11) nếu chưa có;
+   - làm nóng màn So sánh CD002 (`POST /scenarios/run`, lần đầu ~10–25 giây; phải ra `schedule_hours:0-2,12-14`, hơn chạy tiếp 3,99 tr);
+   - bật web trỏ proxy vào backend; in URL, lệnh nhảy giờ, 3 câu AI.
+
+   Lần sau dùng lại DB đã dựng: `node scripts/demo.mjs --db backend/data/pitch-<thời gian>/demo.duckdb`. Cổng khác: `--api-port 8001 --web-port 5174`. Bỏ bước: `--skip-goal`, `--skip-warm`, `--no-web`.
+
+2. **Diễn tập tự động** (mục 6) trên server vừa bật: `cd backend; uv run python -m eval.rehearsal --base-url http://localhost:8000`. Hai lượt phải ĐẠT hết. Diễn tập kết thúc ở 01:00.
+
+3. **Kiểm con số pitch** (một lần, ~10–20 phút; máy bận thì lâu hơn), trên bản sao DB pitch:
 
    ```powershell
    cd backend
-   uv run python -m app.demo_import --shop ../mock-data/out/demo --output data/pitch-0100 --until 2026-11-11T01:00:00+07:00 --models
+   uv run python -m eval.pitch_numbers --reuse-db data/pitch-<thời gian>/demo.duckdb
    ```
 
-   `--until` phải có múi giờ (`+07:00`), thiếu là lỗi. `--models` chạy backtest + fit + ước lượng iROAS (vài phút). Kết quả: `data/pitch-0100/demo.duckdb`.
+   Mọi dòng phải `ĐẠT`. Dòng `LỆCH` thì **không đọc số đó trên sân khấu** cho tới khi rõ lý do. Bảng lưu ở `eval/reports/pitch_numbers.json`. Script chép DB sang thư mục tạm, không ghi vào file gốc. Chạy nhanh khi chỉ đổi what-if: thêm `--skip data,forecast,ads`. Dòng thời gian `/scenarios/run` phụ thuộc tải máy.
 
-2. **Kiểm con số pitch** (một lần, ~10–20 phút; máy bận thì lâu hơn):
-
-   ```powershell
-   uv run python -m eval.pitch_numbers --reuse-db data/pitch-0100/demo.duckdb
-   ```
-
-   Mọi dòng phải `ĐẠT`. Dòng `LỆCH` thì **không đọc số đó trên sân khấu** cho tới khi rõ lý do. Bảng lưu ở `eval/reports/pitch_numbers.json`. Script chép DB sang thư mục tạm, không ghi vào file gốc. Chạy nhanh khi chỉ đổi what-if: thêm `--skip data,forecast,ads`.
-
-3. **AI chạy bản ghi (không cần mạng, không cần key)**. Trong `backend/.env`:
-
-   ```
-   AI_ENABLED=true
-   AI_MODE=replay
-   LIVE_ENABLED=false      # cảnh 01:00 tĩnh; bật lại khi dùng phát lại (mục 3)
-   DEMO_MODE=true
-   ```
-
-   Có sẵn 3 bản ghi trong `backend/eval/ai_recordings/`. **Gõ đúng nguyên văn câu hỏi**, đúng `flow`, đúng mốc dữ liệu:
+4. **AI chạy bản ghi (không cần mạng, không cần key)**: `demo.mjs` đã đặt `AI_MODE=replay`. Có sẵn 3 bản ghi trong `backend/eval/ai_recordings/`. **Gõ đúng nguyên văn câu hỏi**, đúng `flow`, đúng mốc dữ liệu:
 
    | `flow` | Câu hỏi (gõ đúng) | Mốc dữ liệu cần | Kết quả đúng |
    |---|---|---|---|
    | `whatif` | Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao? | 01:00 ngày 11.11, mục tiêu profit CD002 | giảm ngân sách 30%: đạt 81% (khung giờ 57%), kiểm số 8/8 |
    | `explain` | Vì sao nồi chiên chỉ chạy khung giờ? | 01:00 | 3 lý do + điều làm đổi kết luận, 9/9 |
-   | `investigate` | Vì sao áo giữ nhiệt bán chậm? | **14:00** | AOGIUNHIET-M hết hàng từ 13:00, 10/10 |
+   | `investigate` | Vì sao áo giữ nhiệt bán chậm? | **14:00** (`node scripts/demo.mjs jump 13`) | AOGIUNHIET-M hết hàng từ 13:00, 10/10 |
 
-   Các bản ghi này tạo bằng **FakeClient** (kịch bản cố định, công cụ và kiểm số chạy thật), **chưa chạy OpenAI thật**. Nếu đội có key và muốn bản thật: `AI_MODE=record`, chạy server đúng mốc, hỏi 3 câu trên, kiểm file mới trong `eval/ai_recordings/<flow>/`, rồi quay lại `AI_MODE=replay`.
+   Các bản ghi này tạo bằng **FakeClient** (kịch bản cố định, công cụ và kiểm số chạy thật), **chưa chạy OpenAI thật**. Chúng khớp DB dựng bằng `demo.mjs`. DB có backtest/fit (`demo.mjs --models`, hoặc `demo_import --until … --models` kiểu cũ) làm `explain` ra "ngoại tuyến" và what-if 97 thành "không phương án nào đạt". Nếu đội có key và muốn bản thật: chạy backend với biến môi trường `AI_MODE=record` trên đúng DB demo, hỏi 3 câu trên đúng mốc, kiểm file mới trong `eval/ai_recordings/<flow>/`, rồi chạy lại `node scripts/demo.mjs --db …` (replay).
 
-4. **Bật backend + web** ở gốc repo:
-
-   ```powershell
-   node scripts/dev.mjs --db data/pitch-0100/demo.duckdb
-   ```
-
-   API `http://localhost:8000/docs`, web `http://localhost:5173`. Lưu ý: `demo_import --serve` tự tắt AI (`ai_enabled=False`), nên **dùng `dev.mjs`** khi cần AI.
-
-5. **Mục tiêu CD002** phải có trước cảnh nồi chiên (lead đặt): `POST /api/v1/goals` với header `X-User: lead-1`, `X-Role: lead`, body `{"scope_id":"CD002","kind":"profit","deadline":"2026-11-12T00:00:00+07:00","reason":"Lãi trong ngày 11.11"}`. Sau đó mở màn So sánh một lần để dự báo được tính sẵn (lần đầu ~10–25 giây, các lần sau ~0,3–0,7 giây).
-
-6. **Quay video dự phòng** toàn bộ demo theo đúng kịch bản, lưu ở máy demo + một USB.
+5. **Quay video dự phòng** toàn bộ demo theo đúng kịch bản, lưu ở máy demo + một USB.
 
 ## 2. Từng cảnh
 
@@ -66,9 +56,9 @@ Mốc giờ theo kịch bản 6 phút. Màn hình hiện tại = `web/` trừ kh
 |---|---|---|---|
 | 0:00–1:45 | Mở đầu, Vấn đề, Giải pháp | Slide | Nồi chiên: ROAS sàn **8,11**, iROAS thật **5,27**; áo **6,17 / 3,85**; cốc meme **0,88 / 0,64**; ROAS sàn phóng đại trung bình **~1,47 lần**. Nồi chiên đầu ngày còn **83** cái, hết khoảng **15 giờ** (đáp án mô phỏng) |
 | 1:45–2:10 | K1: dữ liệu lộn xộn | [UI?] màn Nhập dữ liệu chưa có trong `web/`. Tạm: `POST /api/v1/ingest/files`, hoặc nói "đã nạp từ trước" và mở `GET /api/v1/data-quality/issues` | Ghép SKU tự động đúng **96,4%** (mã nội bộ + giá vốn), **97,6%** cả 3 nguồn, **0** ghép sai; bắt **12/12** lỗi cài sẵn; lệch giờ ads **+7 tiếng**; **0** PII trong DB |
-| 2:10–2:40 | K2: phát lại 11.11, bình nước | **Chờ M4: lệnh sẽ cập nhật** (mục 3) | Bình nước: nhu cầu 11.11 **514** cái so với ~**23** cái/ngày |
-| 2:40–3:20 | K3: AI điều tra áo | [UI?] màn Trợ lý chưa có trong `web/`. API: `POST /api/v1/ai/investigate` hoặc `POST /api/v1/ai/chat` `flow=investigate`. **Cần dữ liệu tới 14:00** (chờ M4) | Size **M** hết hàng từ khoảng **13 giờ**; S/L vẫn bán; ads CD005 vẫn chạy; không kết luận "hết trend" |
-| 3:20–4:15 | K4: nồi chiên | `web/` `/campaign/CD002/compare`; API `POST /api/v1/scenarios/run` | Đề xuất **chỉ chạy khung giờ 00–02h và 12–14h** (`recommend`, p ≈ 1,00). Hơn chạy tiếp **~3,99 triệu** (nói "khoảng 4 triệu"). Hơn giảm 50% **~1,23 triệu**. Tạm dừng và tạm dừng tới khi hàng về **bị cấm** (cam kết flash). Lãi mỗi nồi giá 11.11 **9.280đ**; ads cần iROAS ≥ **57** mới có lời |
+| 2:10–2:40 | K2: phát lại 11.11, bình nước | Người bấm chạy `node scripts/demo.mjs jump 10` **trước cảnh** (dữ liệu tới 10:59, chờ ~20 giây–3 phút tùy tải máy, mục 3). Cảnh báo "Bình nước giữ nhiệt 500ml bán vượt dự báo 3 giờ liền": [UI?] màn Cảnh báo chưa có trong `web/`; tạm `GET /api/v1/alerts?status=open` hoặc dòng in ra của lệnh `jump` | Nói "**khoảng 11 giờ** app báo bình nước bán vượt dự báo". Nhu cầu 11.11 **514** cái so với ~**23** cái/ngày |
+| 2:40–3:20 | K3: AI điều tra áo | [UI?] màn Trợ lý chưa có trong `web/`. API: `POST /api/v1/ai/chat` `flow=investigate` (hoặc `/ai/investigate`). **Cần dữ liệu tới 14:00**: `node scripts/demo.mjs jump 13`. Cảnh báo "Áo giữ nhiệt nam (Size M) đã hết hàng nhưng quảng cáo CD005 vẫn chạy" bật ở dữ liệu **13:59** | Size **M** hết hàng từ khoảng **13 giờ**; S/L vẫn bán; ads CD005 vẫn chạy; không kết luận "hết trend" |
+| 3:20–4:15 | K4: nồi chiên | Trước cảnh: `node scripts/demo.mjs home` (về 01:00, ~10–60 giây). `web/` `/campaign/CD002/compare`; API `POST /api/v1/scenarios/run` | Đề xuất **chỉ chạy khung giờ 00–02h và 12–14h** (`recommend`, p ≈ 1,00). Hơn chạy tiếp **~3,99 triệu** (nói "khoảng 4 triệu"). Hơn giảm 50% **~1,23 triệu**. Tạm dừng và tạm dừng tới khi hàng về **bị cấm** (cam kết flash). Lãi mỗi nồi giá 11.11 **9.280đ**; ads cần iROAS ≥ **57** mới có lời |
 | 3:20–4:15 | K4 what-if: "chỉ tiêu 97 cái" | [UI?] Trợ lý; API `POST /api/v1/ai/chat` `flow=whatif`, câu ở mục 1.3 | Đổi sang **giảm ngân sách 30%**: đạt **81%** (khung giờ **57%**). Cái giá **~2,3 triệu** so với phương án lời nhất |
 | 4:15–4:45 | K5: bẫy lừa AI | [UI?] Trợ lý, `flow=chat` | Ghi chú ở đơn `2611099UF5GLZH` bị coi là dữ liệu khách; AI không làm theo; mọi thao tác cần người duyệt. **Chưa có bản ghi replay** cho câu này: tập trước, nếu AI ngoại tuyến thì bỏ cảnh (xem "khi trễ giờ") |
 | 4:45–5:30 | Chứng minh | Slide | Dự báo 10.10: WAPE **~37%** so với cách đơn giản **68,6%**; phân nhóm đúng **88,3%**; nhãn tin cậy **44** đã kiểm / **242** tham khảo / **14** kịch bản. iROAS: sai số trung vị **~24,8%**, gần đúng hơn ROAS sàn ở **40/49** chiến dịch; nồi chiên app ước lượng **~4,4–4,5** (thật 5,27, sàn 8,11) |
@@ -81,19 +71,26 @@ Câu dự phòng cho câu hỏi ban giám khảo (đều đã kiểm bằng `eva
 - "Có ví dụ app bảo dừng hẳn không?" → thanh vùng CD020 (đèn lồng đỏ) ngày 06/11, hàng dư V = 0: **"tạm dừng tốt hơn"** (ngưỡng ~0,65 sp/giờ, dự báo khi dừng ~0,67–1,21).
 - "Tính có nhanh không?" → `/scenarios/run` khoảng **0,3 giây** khi dự báo đã có. Nạp lịch sử < **60 giây**, một giờ live < **5 giây** (phụ thuộc máy).
 
-## 3. Phát lại 11.11 và cảnh báo: chờ M4
+## 3. Phát lại 11.11 và cảnh báo
 
-**Chờ M4: lệnh sẽ cập nhật.** Agent điều phối đang làm "nhảy tới giờ H" (`POST /api/v1/live/control`, `GET /api/v1/live/status`, SSE `/api/v1/stream`) và cảnh báo. Khi xong, điền vào đây:
+Lệnh chạy ở terminal thứ hai (gốc repo), thêm `--api-port` nếu đổi cổng. Mỗi lệnh gọi `POST /api/v1/live/control` với quyền lead (cần `DEMO_MODE=true`) và **chờ tính lại + cảnh báo xong** (`wait=true`) rồi in các cảnh báo đang mở.
 
-- Lệnh/nút bắt đầu phát lại từ 9 giờ, tốc độ mỗi giờ.
-- Lệnh nhảy thẳng tới 14:00 (cho K3) và quay về 01:00 (cho K4).
-- Cảnh báo bình nước và áo size M hiện ở màn nào, mấy giờ mô phỏng.
-- `LIVE_ENABLED` / `LIVE_DIR` cần đặt thế nào (không để `live_stream/` cũ của `replay.js` lẫn vào DB pitch).
+| Việc | Lệnh | Ghi chú |
+|---|---|---|
+| Nhảy tới giờ H (dữ liệu tới H:59) | `node scripts/demo.mjs jump 10` | API: `{"command":"jump","hour":10,"wait":true}`. Một lần nhảy ~10–25 giây, tới ~3 phút khi máy bận (tính lại ~200 SKU): nhảy trước cảnh, không nhảy lúc đang nói |
+| Về 01:00 (cảnh nồi chiên) | `node scripts/demo.mjs home` | `reset` + `jump 0`: đúng trạng thái lúc dựng DB |
+| Phát lại tự động | `node scripts/demo.mjs replay 9 20` | từ 9 giờ, 20 giây mỗi giờ (`start`); dừng: `node scripts/demo.mjs stop`, dữ liệu đã nạp giữ nguyên |
+| Xem trạng thái | `node scripts/demo.mjs status` hoặc `GET /api/v1/live/status` | SSE: `GET /api/v1/stream` |
 
-Biết trước về huy hiệu độ mới Ads (đã kiểm, xem [M5-chuan-bi-demo.md](../quyet-dinh/M5-chuan-bi-demo.md)):
+Giờ cảnh báo đã đo (diễn tập `eval.rehearsal`):
 
-- Theo đường phát lại (`replay.js` / live control), lúc **01:00 và 02:00** Ads hiện **"cũ hơn ngưỡng"** (trễ 4 và 5 giờ, ngưỡng 3 giờ). Lý do: 3 giờ ads cuối của ngày 10/11 không bao giờ về. Từ **03:00** trở đi Ads trễ đúng **2 giờ**. Câu nói nếu bị hỏi: "Báo cáo ads về chậm; app nói thẳng số ads đang cũ, không giả vờ là mới."
-- DB dựng bằng `app.demo_import` lúc 01:00 thì Ads **trễ 0 phút** (bản import này không mô phỏng độ trễ ads). Số đề xuất CD002 như nhau ở cả hai cách.
+- **Bình nước** `BINHNUOC500` "bán vượt dự báo 3 giờ liền" (`sales_above_forecast`): bật khi dữ liệu tới **10:59** (`jump 10`). Nói "khoảng 11 giờ".
+- **Áo giữ nhiệt size M** "đã hết hàng nhưng quảng cáo CD005 vẫn chạy" (`stockout_risk`, mức cao): bật khi dữ liệu tới **13:59** (`jump 13`). Lúc 10:59 đã có "sắp hết".
+- Màn hiện cảnh báo: [UI?] `web/` chưa có màn Cảnh báo (trang chờ). Tạm dùng `GET /api/v1/alerts?status=open` hoặc dòng in ra của `demo.mjs jump`.
+
+`LIVE_ENABLED=true` và `LIVE_DIR=<thư mục DB>/live_stream` do `demo.mjs` đặt. Không chạy `node replay.js` của `mock-data` khi demo (nó ghi vào `mock-data/out/demo/live_stream`, server demo không đọc thư mục đó).
+
+**Huy hiệu "Ads trễ" lúc 01:00–02:00** (người dùng chưa quyết, giữ nguyên dữ liệu): DB của `demo.mjs` đi đúng đường phát lại, nên lúc **01:00 và 02:00** Ads hiện "cũ hơn ngưỡng" (trễ 4 và 5 giờ, ngưỡng 3 giờ; 3 giờ ads cuối ngày 10/11 không bao giờ về, xem Q1 của [M5-chuan-bi-demo.md](../quyet-dinh/M5-chuan-bi-demo.md)). Từ **03:00** Ads trễ đúng **2 giờ**. Nếu bị hỏi: "Hệ thống tự báo khi số liệu quảng cáo về chậm; từ 03:00 trễ đúng 2 giờ." Đề xuất CD002 không đổi.
 
 ## 4. Câu KHÔNG được nói
 
@@ -110,23 +107,37 @@ Biết trước về huy hiệu độ mới Ads (đã kiểm, xem [M5-chuan-bi-d
 
 | Sự cố | Làm gì |
 |---|---|
-| Backend chết | Người nói chuyển sang phần slide. Người bấm: Ctrl+C rồi chạy lại `node scripts/dev.mjs --db data/pitch-0100/demo.duckdb` (~10 giây, DB file còn nguyên). Không chạy lại `demo_import` lên cùng thư mục (nó từ chối, đúng như thiết kế) |
-| Cổng 8000 hoặc 5173 bận | `node scripts/dev.mjs --db data/pitch-0100/demo.duckdb --api-port 8001 --web-port 5174`. Tìm tiến trình giữ cổng: `Get-NetTCPConnection -LocalPort 8000` |
+| Backend chết | Người nói chuyển sang phần slide. Người bấm: Ctrl+C rồi chạy lại `node scripts/demo.mjs --db backend/data/pitch-<thời gian>/demo.duckdb` (~20–30 giây; DB còn nguyên, dữ liệu ở đúng giờ đã nhảy). Không dùng `dev.mjs` cho demo (đọc `.env`, AI có thể không ở replay) |
+| Cổng 8000 hoặc 5173 bận | `node scripts/demo.mjs --db … --api-port 8001 --web-port 5174` (và `--api-port 8001` cho mọi lệnh `jump/home`). Tìm tiến trình giữ cổng: `Get-NetTCPConnection -LocalPort 8000` |
 | DuckDB báo file đang bị khóa | Còn một server/script khác mở cùng file. Tắt nó, hoặc dựng thư mục DB mới (mục 1.1) |
-| Mất mạng / OpenAI lỗi | Đã ở `AI_MODE=replay` thì không ảnh hưởng. Đang `live` → đổi `AI_MODE=replay` trong `.env`, khởi động lại backend. Câu không có bản ghi → nói "trợ lý đang ngoại tuyến", đi tiếp màn chính. Riêng `investigate` không bao giờ lỗi 503: không có AI thì hiện "Tóm tắt tự động từ checklist" |
+| Mất mạng / OpenAI lỗi | `demo.mjs` luôn chạy `AI_MODE=replay`, không ảnh hưởng. Nếu đang chạy bản `live`/`record` tự bật: tắt, chạy lại `node scripts/demo.mjs --db …`. Câu không có bản ghi → nói "trợ lý đang ngoại tuyến", đi tiếp màn chính. Riêng `investigate` không bao giờ lỗi 503: không có AI thì hiện "Tóm tắt tự động từ checklist" |
 | AI trả lời chậm > 5 giây | Người bấm mở câu trả lời ghi sẵn; người nói nói tiếp, không chờ |
-| Replay không khớp, AI ra `gave_up` | Dữ liệu khác mốc của bản ghi (ví dụ hỏi `investigate` ở 01:00). Nhảy về đúng mốc (chờ M4) hoặc bỏ cảnh |
+| Replay không khớp, AI ra `gave_up` / "ngoại tuyến" | Dữ liệu khác mốc của bản ghi (vd hỏi `investigate` ở 01:00, `explain` sau `jump 13`) hoặc DB có backtest/fit. Về đúng mốc (`home` cho 01:00, `jump 13` cho 14:00) hoặc bỏ cảnh |
+| `jump` lâu > 3 phút | Máy đang tải. Người nói kể tiếp bằng slide; không bấm lại lệnh (lệnh mới dừng lệnh cũ và nạp lại) |
 | Máy demo hỏng | Chiếu video dự phòng từ mốc đang dở, lời nói giữ nguyên |
 | Trễ giờ | Trễ > 20 giây ở mốc 2:40: bỏ K5. Trễ > 40 giây: bỏ thêm K1 ("dữ liệu đã nạp và làm sạch từ trước"). **Không bao giờ bỏ K3 và K4** |
 
-## 6. Kiểm tra 10 phút trước giờ
+## 6. Diễn tập
 
+Chạy trên server demo đang bật, hoặc tự dựng app trong process trên bản sao DB:
+
+```powershell
+cd backend
+uv run python -m eval.rehearsal --base-url http://localhost:8000       # server của demo.mjs
+uv run python -m eval.rehearsal --db data/pitch-<thời gian>/demo.duckdb # không cần server
+```
+
+Hai lượt liên tiếp; mỗi lượt chạy đúng thứ tự cảnh và kết thúc bằng `reset` + `jump 0`. In bảng ĐẠT/LỖI + thời gian, ghi `eval/reports/rehearsal.json`, thoát mã 1 nếu có LỖI. Các bước: (a) độ mới 01:00 + Tổng quan ca; (b) CD002 khung giờ 0–2, 12–14, hơn chạy tiếp ~3,99 tr, tạm dừng bị cấm, có ZoneBar; (c) AI replay `explain` + `whatif`; (d) quyết định: operator tạo + gửi, lead-1 duyệt, lead-2 tự duyệt → 403; (e) `jump 10` → cảnh báo bình nước; (f) `jump 13` → áo size M hết hàng khi CD005 vẫn chạy + AI `investigate`; (g) về 01:00. Mỗi lượt ~1 phút (máy rảnh) tới ~5 phút (máy bận), chủ yếu là các lần nhảy giờ. Diễn tập ghi thêm quyết định vào DB pitch như một buổi tập thật; muốn DB sạch thì dựng DB mới.
+
+## 7. Kiểm tra 10 phút trước giờ
+
+- [ ] `eval/reports/rehearsal.json` của hôm nay: `"ok": true`.
 - [ ] `eval/reports/pitch_numbers.json` của hôm nay: mọi dòng `ĐẠT` (hoặc đã gạch số `LỆCH` khỏi slide).
-- [ ] Backend lên: `GET http://localhost:8000/api/v1/health` trả ok; `GET /api/v1/ai/status` báo `mode = replay`, `enabled = true`.
-- [ ] `GET /api/v1/freshness`: `data_as_of` = 01:00 ngày 11.11 (hoặc mốc kịch bản đang dùng).
-- [ ] Mở `/campaign/CD002/compare` một lần: đề xuất "chỉ chạy khung giờ 00–02h, 12–14h", tạm dừng bị làm mờ. Lần mở này cũng làm nóng dự báo.
+- [ ] `demo.mjs` in "DEMO SẴN SÀNG", mọi bước ĐẠT. `GET /api/v1/ai/status`: `mode = replay`, `enabled = true`.
+- [ ] `GET /api/v1/freshness`: `data_as_of` = 01:00 ngày 11.11 (không phải thì `node scripts/demo.mjs home`).
+- [ ] Mở `/campaign/CD002/compare` một lần: đề xuất "chỉ chạy khung giờ 00–02h, 12–14h", tạm dừng bị làm mờ.
 - [ ] Thử 1 câu AI ghi sẵn (gõ đúng nguyên văn), thấy chip nguồn và "kiểm số n/n".
-- [ ] Phát lại / nhảy giờ: **chờ M4**, điền khi có lệnh.
+- [ ] Terminal thứ hai mở sẵn ở gốc repo, gõ sẵn `node scripts/demo.mjs jump 10`.
 - [ ] Video dự phòng mở được trên máy chiếu; có bản trên USB.
 - [ ] Tắt thông báo hệ điều hành, phóng chữ trình duyệt 125%, đóng tab thừa, sạc đầy pin.
 - [ ] Người bấm và người nói thống nhất mốc 2:40 (quyết bỏ K5 hay không).

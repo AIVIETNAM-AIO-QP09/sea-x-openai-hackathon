@@ -9,15 +9,20 @@ Runs on **every** answer before it reaches the UI.
    ``vnd``). Skipped: numbers glued to codes (``CD002``, ``NOICHIEN2L``, ``500ml``,
    ``AOGIUNHIET-M``), list ordinals, ``[[src:…]]`` markers, untrusted blocks.
 2. :func:`collect_tool_numbers` walks the JSON of every tool result of the turn (what the
-   LLM saw), keeping ``call_id → json_path``, the source ids and the entities (SKU,
-   campaign) of the enclosing objects. Numbers written inside tool text (``reasons``,
-   labels) count too; numbers inside ``<du_lieu_khong_tin_cay>`` never do.
-3. :func:`check` matches each mention (tolerances of 07 §6, plus the display precision:
-   "4,1 triệu" covers ±50 000đ), accepts one-step arithmetic (difference, sum, ratio of two
-   tool numbers) when the sentence says so ("chênh", "tổng", "gấp", "lợi hơn"…), accepts a
-   number the user wrote in the question, checks that a sentence naming a SKU / campaign
-   uses that entity's numbers, and attaches a citation (auto-adding or correcting the
-   ``[[src:id]]`` chip).
+   LLM saw) and keeps only **structured** values: JSON numbers, ISO timestamps / dates,
+   strings that are just a number or a clock time. Each keeps ``call_id → json_path``, the
+   source ids, the entities (SKU, campaign) of the enclosing objects and the unit its key
+   names (:func:`key_unit`: ``p_target`` → pct, ``spend`` → vnd, ``window_hours`` → hour).
+   Numbers inside free text (``reasons``, ``label``, ``note``, ``goal_note``…) and inside
+   ``<du_lieu_khong_tin_cay>`` are never sources (M4-ai.md "Siết grounding").
+3. :func:`check` matches each mention against one structured value of a fitting unit
+   (tolerances of 07 §6, plus the display precision: "4,1 triệu" covers ±50 000đ; a
+   percentage only matches a probability / ratio / pct key, never money or a quantity).
+   The only derived numbers: the difference, sum or ratio of two values of the **same
+   metric in the same tool call** (two options of one simulation), when the sentence says
+   so ("chênh", "tổng", "gấp", "lợi hơn"…). It also accepts a number the user wrote in the
+   question, checks that a sentence naming a SKU / campaign uses that entity's numbers,
+   and attaches a citation (auto-adding or correcting the ``[[src:id]]`` chip).
 
 Any mention without a match → ``ok = False``; :func:`rewrite_instruction` is the message
 sent back to the LLM (max 2 rewrites, then a fallback answer, see ``agent.py``).
@@ -25,7 +30,6 @@ sent back to the LLM (max 2 rewrites, then a fallback answer, see ``agent.py``).
 
 from __future__ import annotations
 
-import bisect
 import json
 import math
 import re
@@ -36,7 +40,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.ai.guard import strip_untrusted
 from app.core.timeutil import to_local
 
 Unit = Literal["vnd", "units", "pct", "number", "hour", "days", "minutes", "time", "date", "year"]
@@ -290,7 +293,7 @@ class ToolNumber:
     path: str
     source_ids: tuple[str, ...]
     entities: frozenset[str]
-    unit_hint: Unit | None = None
+    unit_hint: Unit | None = None  # unit named by the JSON key (key_unit), None = generic
 
 
 @dataclass
@@ -325,7 +328,87 @@ def _entities_of(obj: Mapping[str, Any]) -> set[str]:
     return out
 
 
+# Unit of a structured tool number, read from its JSON key (``p_target`` → pct,
+# ``spend`` → vnd, ``window_hours`` → hour, ``sold_3h_units`` → units). Tokens of the key are
+# read from the end: the last one that names a unit wins (``budget_exhausted_hours_24h`` →
+# hour, ``contribution_per_unit_vnd`` → vnd; the word after ``per`` is skipped). Quantile /
+# statistic keys (``mean``, ``p50``, ``interval``…) take the unit of their parent key. A key
+# that names nothing stays generic (``None``): it can ground money, quantities, durations
+# and bare numbers, but a percentage only as a 0–1 ratio (×100).
+_KEY_TOKENS: dict[str, Unit] = {
+    **dict.fromkeys(
+        ("p", "prob", "probability", "pct", "percent", "share", "rate", "ratio", "confidence"),
+        "pct",
+    ),
+    **dict.fromkeys(("minute", "minutes"), "minutes"),
+    **dict.fromkeys(("hour", "hours", "window", "windows"), "hour"),
+    **dict.fromkeys(("day", "days"), "days"),
+    **dict.fromkeys(
+        (
+            "vnd",
+            "spend",
+            "budget",
+            "price",
+            "cost",
+            "revenue",
+            "gmv",
+            "profit",
+            "objective",
+            "gain",
+            "loss",
+            "fee",
+            "contribution",
+            "penalty",
+            "cpc",
+            "aov",
+        ),
+        "vnd",
+    ),
+    **dict.fromkeys(
+        (
+            "units",
+            "unit",
+            "qty",
+            "stock",
+            "sold",
+            "orders",
+            "demand",
+            "available",
+            "hand",
+            "change",
+            "skus",
+            "n",
+            "count",
+            "total",
+        ),
+        "units",
+    ),
+}
+_STAT_KEY = re.compile(
+    r"^(?:mean|median|p\d{1,2}|lo|hi|low|high|min|max|std|interval|cum_p\d{1,2})$"
+)
+_NUMERIC_STR = re.compile(r"^-?\d+(?:\.\d+)?$")
+_CLOCK_STR = re.compile(r"^(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)$")
+
+
+def key_unit(name: str) -> Unit | None:
+    """Unit named by a JSON key (see ``_KEY_TOKENS``); ``None`` = generic."""
+    toks = [t for t in re.split(r"[^a-z0-9]+", name.lower()) if t]
+    for i in range(len(toks) - 1, -1, -1):
+        if i > 0 and toks[i - 1] == "per":
+            continue
+        u = _KEY_TOKENS.get(toks[i])
+        if u is not None:
+            return u
+    return None
+
+
 def collect_tool_numbers(outputs: Iterable[ToolOutput]) -> list[ToolNumber]:
+    """Every **structured** number of the tool results: JSON numbers, ISO timestamps / dates,
+    strings that are only a number or a clock time. Numbers inside free text (``reasons``,
+    ``label``, ``note``, ``goal_note``…) are not collected: a sentence written by the system
+    from a value is grounded by that value itself, and a number that exists only in text
+    (or in ``<du_lieu_khong_tin_cay>``) never grounds an answer."""
     found: list[ToolNumber] = []
     for o in outputs:
         base_entities = {
@@ -354,7 +437,7 @@ def collect_tool_numbers(outputs: Iterable[ToolOutput]) -> list[ToolNumber]:
                 for k, v in obj.items():
                     if k in SKIP_KEYS or k == "id" or k.endswith("_id") or k.endswith("_ids"):
                         continue
-                    walk(v, f"{path}.{k}", here, k)
+                    walk(v, f"{path}.{k}", here, key if (key and _STAT_KEY.match(k)) else k)
                 return
             if isinstance(obj, list | tuple):
                 for i, v in enumerate(obj):
@@ -364,8 +447,9 @@ def collect_tool_numbers(outputs: Iterable[ToolOutput]) -> list[ToolNumber]:
                 v = float(obj)
                 if not math.isfinite(v):
                     return
-                add(v, "num", path, ents)
-                if ("window" in path or "hour" in key) and v == int(v) and 0 <= v <= 24:
+                add(v, "num", path, ents, key_unit(key))
+                raw_key = path.rsplit(".", 1)[-1]
+                if ("window" in path or "hour" in raw_key) and v == int(v) and 0 <= v <= 24:
                     add(v * 60, "hour_int", path, ents)
                 return
             if isinstance(obj, str):
@@ -390,16 +474,13 @@ def collect_tool_numbers(outputs: Iterable[ToolOutput]) -> list[ToolNumber]:
                         add(dv, "date", path, ents)
                     add(float(d.year), "year", path, ents)
                     return
-                clean = strip_untrusted(s)
-                for m in extract_mentions(clean):
-                    if m.unit == "time":
-                        add(m.value, "time", path, ents)
-                    elif m.unit == "date":
-                        add(m.value, "date", path, ents)
-                    elif m.unit == "year":
-                        add(m.value, "year", path, ents)
-                    else:
-                        add(m.value, "num", path, ents, m.unit)
+                if _NUMERIC_STR.match(s):
+                    add(float(s), "num", path, ents, key_unit(key))
+                    return
+                cm = _CLOCK_STR.match(s)
+                if cm:
+                    add(float(int(cm.group("h")) * 60 + int(cm.group("m"))), "time", path, ents)
+                # any other string is free text: its numbers are not sources
 
         walk(o.payload, "$", set(base_entities), "")
     return found
@@ -457,13 +538,45 @@ def _tol(m: Mention, t: float) -> float:
     rel = 0.005 * abs(t)
     hu = m.half_ulp * (2.0 if m.approx else 1.0)
     if m.unit == "vnd":
-        return max(rel, hu, 1000.0 if m.scale == 1.0 else 0.0)
+        # the 1.000đ floor of 07 §6 is for amounts, never for a small number (0,5 / 80)
+        return max(rel, hu, 1000.0 if m.scale == 1.0 and abs(t) >= 1e4 else 0.0)
     if m.unit in ("units", "minutes"):
         tens = 5.0 if (m.approx and m.value % 10 == 0 and m.value >= 20) else 0.0
         return max(hu, 0.5, tens)
     if m.unit == "pct":
         return max(0.5, hu)
     return max(hu, min(rel, 0.05) if abs(t) < 100 else rel)
+
+
+# which tool-number units (``ToolNumber.unit_hint``, None = generic key) can ground a
+# mention of each unit; a percentage is handled apart (probability / ratio / pct keys only)
+_UNIT_OK: dict[Unit | None, frozenset[Unit | None]] = {
+    "vnd": frozenset({"vnd", None}),
+    "units": frozenset({"units", None}),
+    "hour": frozenset({"hour", None}),
+    "minutes": frozenset({"minutes", None}),
+    "days": frozenset({"days", None}),
+    "number": frozenset({None}),
+}
+
+
+def _scaled(m: Mention, tn: ToolNumber) -> list[float]:
+    """Values of ``tn`` comparable with ``m`` in m's unit; [] = wrong unit.
+
+    A percentage matches a pct/probability/ratio key (as 0–1 → ×100 or as 0–100), or a
+    generic key holding a 0–1 ratio (×100); never money, a quantity or a duration."""
+    tv = tn.value
+    if m.unit == "pct":
+        if tn.unit_hint == "pct":
+            return [tv, tv * 100] if abs(tv) <= 1.5 else [tv]
+        if tn.unit_hint is None and abs(tv) <= 1.0:
+            return [tv * 100]
+        return []
+    if m.unit is None:  # bare number: the raw structured value, any key
+        return [tv]
+    if tn.unit_hint not in _UNIT_OK.get(m.unit, frozenset({None})):
+        return []
+    return [tv]
 
 
 def _num_candidates(m: Mention, pool: Sequence[ToolNumber]) -> list[tuple[ToolNumber, float]]:
@@ -474,16 +587,8 @@ def _num_candidates(m: Mention, pool: Sequence[ToolNumber]) -> list[tuple[ToolNu
             if m.unit == "hour" and tn.kind == "hour_int" and abs(tn.value - v * 60) < 0.5:
                 out.append((tn, tn.value / 60))
             continue
-        tv = abs(tn.value)
-        cands = [tv]
-        if m.unit == "pct" and tv <= 1.5 and tn.unit_hint != "pct":
-            cands.append(tv * 100)
-        if m.unit not in (None, "pct") and tn.unit_hint == "pct":
-            continue
-        if m.unit == "vnd" and tn.unit_hint not in (None, "vnd"):
-            continue
-        for c in cands:
-            if abs(c - v) <= _tol(m, c):
+        for c in _scaled(m, tn):
+            if abs(abs(c) - v) <= _tol(m, abs(c)):
                 out.append((tn, c))
                 break
     return out
@@ -515,41 +620,52 @@ def _date_candidates(m: Mention, pool: Sequence[ToolNumber]) -> list[tuple[ToolN
     return out
 
 
+_IDX = re.compile(r"\[\d+\]")
+
+
 def _arith(m: Mention, pool: Sequence[ToolNumber]) -> tuple[ToolNumber, ToolNumber, str] | None:
-    """``v ≈ a − b``, ``a + b`` or ``a / b`` (one step) for two tool numbers."""
-
-    def same_kind(t: ToolNumber) -> bool:
-        if t.kind != "num" or t.value == 0:
-            return False
-        if m.unit == "vnd":
-            return abs(t.value) >= 1000 and t.unit_hint in (None, "vnd")
-        if m.unit == "units":
-            return abs(t.value) < 1e6 and t.unit_hint in (None, "units")
-        return t.unit_hint in (None, m.unit)
-
+    """The only derived numbers accepted (sentence must name the operation, see ``OP_RE``):
+    the difference, sum or ratio of **two values of the same metric in the same tool call**,
+    e.g. ``results[1].objective.mean − results[0].objective.mean`` (two options of one
+    simulation), ``variants[0].units + variants[2].units``, ``p_target`` gap in điểm %.
+    Same metric = same tool call, same JSON path up to list indices, a unit that fits the
+    mention. Never two numbers of different kinds, never a 0 operand; a ratio only for
+    "gấp … lần" / bare numbers. Unit conversions (tr ↔ đ, ratio ↔ %) are not arithmetic:
+    the direct match already does them."""
     if m.unit is None and abs(m.value) < 10:
         return None
-    nums = sorted({abs(t.value): t for t in pool if same_kind(t)}.items())
-    if len(nums) < 2:
-        return None
-    vals = [x for x, _ in nums]
     target = abs(m.value)
-    for a, ta in nums:
-        tol = _tol(m, target)
-        for b_target, op in ((a - target, "−"), (target - a, "+")):
-            if b_target <= 0:
+    groups: dict[tuple[str, str], list[tuple[ToolNumber, float]]] = {}
+    for tn in pool:
+        if tn.kind != "num" or tn.value == 0:
+            continue
+        if m.unit == "pct":
+            if tn.unit_hint != "pct":
                 continue
-            i = bisect.bisect_left(vals, b_target - tol)
-            if i < len(vals) and abs(vals[i] - b_target) <= tol and vals[i] != a:
-                return ta, nums[i][1], op
-        if m.unit in (None, "number", "pct") and target > 0:
-            mult = target / 100 if m.unit == "pct" else target
-            b_target = a / mult if mult else 0.0
-            if b_target > 0:
-                tol_r = b_target * 0.01
-                i = bisect.bisect_left(vals, b_target - tol_r)
-                if i < len(vals) and abs(vals[i] - b_target) <= tol_r and vals[i] != a:
-                    return ta, nums[i][1], "/"
+            val = tn.value * 100 if abs(tn.value) <= 1.5 else tn.value
+        elif m.unit in (None, "number"):
+            if tn.unit_hint == "pct":
+                continue
+            val = tn.value
+        else:
+            if not _scaled(m, tn):
+                continue
+            val = tn.value
+        groups.setdefault((tn.call_id, _IDX.sub("[]", tn.path)), []).append((tn, val))
+    tol = _tol(m, target)
+    for (_cid, gpath), items in groups.items():
+        if "[]" not in gpath or len(items) < 2:
+            continue
+        for i, (ta, a) in enumerate(items):
+            for tb, b in items[i + 1 :]:
+                if abs(abs(a - b) - target) <= tol:
+                    return (ta, tb, "−") if a >= b else (tb, ta, "−")
+                if abs(abs(a + b) - target) <= tol:
+                    return ta, tb, "+"
+                if m.unit in (None, "number") and target > 0:
+                    for x, y, tx, ty in ((a, b, ta, tb), (b, a, tb, ta)):
+                        if y and abs(x / y - target) <= max(tol, 0.01 * target):
+                            return tx, ty, "/"
     return None
 
 
@@ -737,7 +853,8 @@ def rewrite_instruction(report: GroundingReport) -> str:
     return (
         f"Các số hoặc đối tượng sau không có trong kết quả công cụ: {items}. "
         "Viết lại câu trả lời, chỉ dùng số từ kết quả công cụ của lượt này (ghi [[src:id]] ngay"
-        " sau mỗi số) hoặc gọi thêm công cụ. Không tự tính, không ước đoán."
+        " sau mỗi số) hoặc gọi thêm công cụ. Chỉ lấy số ở các trường số; số nằm trong câu chữ"
+        " (lý do, ghi chú, nhãn) không được tính. Không tự tính, không ước đoán."
     )
 
 

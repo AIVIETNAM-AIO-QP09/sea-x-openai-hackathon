@@ -19,20 +19,30 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-describe('Compare screen · CD002 on 11.11 (fixture)', () => {
+// Fixtures are the real API at 01:00 on 11.11 (backend/eval/record_fixtures.py); the
+// pitch numbers are checked by backend/eval/pitch_numbers.py.
+describe('Compare screen · CD002 on 11.11 (API snapshot fixture)', () => {
+  it('pitch numbers: schedule 0–2h, 12–14h, ~1,2 triệu better than −50% budget', async () => {
+    renderAt('/campaign/CD002/compare');
+    expect(await screen.findByText('Chỉ chạy 0–2h, 12–14h. Lợi hơn giảm ngân sách 50% khoảng 1,2 triệu đ.')).toBeInTheDocument();
+    expect(screen.getByText('Dữ liệu tới 01:00 · tính lúc 01:00')).toBeInTheDocument();
+    expect(screen.getByText(/^Ảnh chụp kết quả mô phỏng lúc 01:00 11\.11/)).toBeInTheDocument();
+    expect(screen.getByText('Mục tiêu: Lợi nhuận tới 00:00 12/11')).toBeInTheDocument();
+  });
+
   it('tier 1: conclusion, zone bar, "better than both" line and blocked pause card', async () => {
     renderAt('/sku/NOICHIEN2L/compare');
-    expect(
-      await screen.findByText('Chỉ chạy 0–2h, 12–14h. Lợi hơn tiếp tục khoảng 4,3 triệu đ.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Chỉ chạy 0–2h, 12–14h. Lợi hơn giảm ngân sách 50% khoảng 1,2 triệu đ.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'So sánh lựa chọn cho chiến dịch CD002' })).toBeInTheDocument();
-    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Pause tốt hơn');
-    expect(await screen.findByText('Pause tốt hơn tiếp tục, nhưng không được tắt hẳn vì cam kết flash sale.')).toBeInTheDocument();
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Tạm dừng bị cấm vì đã cam kết với sàn');
+    expect((await screen.findAllByText(/^Tạm dừng bị cấm vì đã cam kết với sàn trong khung flash sale\./)).length).toBeGreaterThan(0);
     expect(screen.getByText('Phương án tốt hơn cả hai: Chỉ chạy 0–2h, 12–14h.')).toBeInTheDocument();
 
     const cards = within(screen.getByRole('list', { name: 'Năm hành động' })).getAllByRole('listitem', { name: undefined });
     const top = cards.filter((li) => li.parentElement?.getAttribute('aria-label') === 'Năm hành động');
-    expect(top).toHaveLength(5);
+    // the API also returns pause_until_restock, blocked like pause
+    expect(top).toHaveLength(6);
+    expect(top.filter((li) => li.textContent?.includes('Không làm được'))).toHaveLength(2);
     const pause = top.find((li) => li.textContent?.startsWith('Tạm dừng') && !li.textContent.includes('hàng về'));
     expect(pause).toHaveTextContent('Không làm được');
     expect(pause).toHaveTextContent('Vi phạm cam kết flash sale');
@@ -43,15 +53,14 @@ describe('Compare screen · CD002 on 11.11 (fixture)', () => {
   it('tier 2: reasons with clickable numbers and the flip condition', async () => {
     renderAt('/campaign/CD002/compare');
     await userEvent.click(await screen.findByRole('button', { name: 'Vì sao?' }));
-    const chip = screen.getByRole('button', { name: /9\.280đ/ });
+    expect(screen.getByText(/lãi 9\.280đ; ads chỉ có lời khi iROAS ≥ 57\.2/)).toBeInTheDocument();
+    const chip = screen.getByRole('button', { name: /531\.000đ/ });
     await userEvent.click(chip);
-    expect(screen.getByRole('dialog', { name: 'Nguồn: Đóng góp NOICHIEN2L' })).toBeInTheDocument();
-    expect(screen.getByText('Nếu hàng về trong hôm nay, chạy tiếp có lợi hơn')).toBeInTheDocument();
-
-    // Restock slider: moving to "sớm 1 ngày" reaches the flip point (fixture estimate).
-    const slider = screen.getByLabelText(/Hàng về trễ/);
-    fireEvent.change(slider, { target: { value: '-1' } });
-    expect(screen.getByText(/đã chạm điểm đổi: Nếu hàng về trong hôm nay/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Nguồn: Giá bán, giá vốn, phí sàn của NOICHIEN2L' })).toBeInTheDocument();
+    expect(screen.getByText(/^Nếu hàng dư còn giá trị .* → Giảm ngân sách 50% tốt hơn$/)).toBeInTheDocument();
+    // No restock flip in the snapshot, so fixture mode shows only the leftover slider.
+    expect(screen.getByLabelText(/1 sp còn lại sau hạn/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Hàng về trễ/)).not.toBeInTheDocument();
   });
 
   it('tier 3: table of 5 actions with violations, and lineage', async () => {
@@ -59,11 +68,10 @@ describe('Compare screen · CD002 on 11.11 (fixture)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Chi tiết kiểm tra' }));
     const table = await screen.findByRole('table', { name: 'Kết quả 5 hành động trong kỳ quyết định' });
     const rows = within(table).getAllByRole('row');
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
     expect(within(table).getAllByText('Vi phạm cam kết flash sale')).toHaveLength(2);
-    expect(within(table).getByText('−4.480.000đ')).toBeInTheDocument();
-    expect(screen.getByText('fc-8812, fc-8813, fc-8814')).toBeInTheDocument();
-    expect(screen.getByText('ie-37')).toBeInTheDocument();
+    expect(screen.getByText(/^fc-[0-9A-Z]+, fc-[0-9A-Z]+, fc-[0-9A-Z]+$/)).toBeInTheDocument();
+    expect(screen.getByText(/^iroas-[0-9A-Z]+$/)).toBeInTheDocument();
     expect(screen.getByText('1.000 · 20261111')).toBeInTheDocument();
   });
 
@@ -120,6 +128,6 @@ describe('Compare entry and overview link', () => {
     const card = within(attention).getByText('Nồi chiên không dầu mini 2L').closest('li') as HTMLElement;
     await userEvent.click(within(card).getByRole('link', { name: /So sánh/ }));
     expect(router.state.location.pathname).toBe('/sku/NOICHIEN2L/compare');
-    expect(await screen.findByText(/Lợi hơn tiếp tục khoảng 4,3 triệu đ/)).toBeInTheDocument();
+    expect(await screen.findByText(/Lợi hơn giảm ngân sách 50% khoảng 1,2 triệu đ/)).toBeInTheDocument();
   });
 });

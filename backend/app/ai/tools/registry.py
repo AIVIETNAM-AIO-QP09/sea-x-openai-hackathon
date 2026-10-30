@@ -167,6 +167,9 @@ class ToolContext:
     stub_results: dict[str, Any] | None = None  # offline eval: canned tool data
     log_calls: bool = True
     results: list[ToolResult] = field(default_factory=list)
+    # live write lock for the compute tools; None = the running runtime's
+    # (``app.simulator.locks``)
+    live_lock: Any = None
 
     @property
     def drafts_allowed(self) -> bool:

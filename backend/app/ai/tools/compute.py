@@ -1,7 +1,8 @@
 """Compute tools (AI-03): ``run_scenario``, ``compare_actions``, ``compute_breakeven``.
 
 They map 1–1 onto ``SimRequest`` (05 §1) and call :func:`app.simulator.service.run_simulation`
-exactly like ``POST /scenarios/run``. Nothing here changes business state:
+exactly like ``POST /scenarios/run``, under the same locks (``app.simulator.locks``: live
+write lock, then ``RUN_LOCK``). Nothing here changes business state:
 
 * a run **without** assumptions is persisted like an API run (scenario id usable by
   ``draft_decision``);
@@ -40,6 +41,7 @@ from app.core.timeutil import local_date, local_day_bounds_utc
 from app.economics.breakeven import BreakevenRequest, uniform_breakeven
 from app.economics.goals import GOAL_LABEL_VI, Goal, active_goal
 from app.economics.parameters import parse_overrides
+from app.simulator.locks import simulation_locks
 from app.simulator.schemas import ActionSpec, Dist, SimOutput, SimRequest
 from app.simulator.service import run_simulation
 
@@ -152,15 +154,23 @@ def simulate(
         seed=ctx.settings.default_seed,
     )
     goal_info: dict[str, Any]
+    # same locks and order as POST /scenarios/run and the orchestrator: a question asked
+    # while a live tick recomputes waits instead of "Conflict on update" (M5 Q5)
     if goal_override is not None:
         goal = _hypothetical_goal(ctx, campaign_id, goal_override)
-        out = _run_with_goal(ctx, req, goal)
+        with simulation_locks(ctx.live_lock):
+            out = _run_with_goal(ctx, req, goal)
     else:
         assert base_goal is not None
         goal = base_goal
-        out = run_simulation(
-            ctx.conn, req, requested_by="ai", persist=not is_scenario, use_cache=not is_scenario
-        )
+        with simulation_locks(ctx.live_lock):
+            out = run_simulation(
+                ctx.conn,
+                req,
+                requested_by="ai",
+                persist=not is_scenario,
+                use_cache=not is_scenario,
+            )
     goal_info = {
         "kind": goal.kind,
         "label": GOAL_LABEL_VI.get(goal.kind, goal.kind),

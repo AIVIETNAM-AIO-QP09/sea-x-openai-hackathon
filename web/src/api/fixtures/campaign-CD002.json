@@ -1,10 +1,9 @@
 {
-  "_note": "Lấy từ GET /campaigns/CD002 thật (DB demo, 11/11 00:00), sửa mục tiêu và đề xuất cho khớp ca fixture rec-551.",
   "data": {
     "campaign_id": "CD002",
     "name": "[Tìm kiếm] Nồi chiên mini + giấy lót",
     "type": "Tìm kiếm",
-    "daily_budget_vnd": 1864000,
+    "daily_budget_vnd": 5592000,
     "sku_level_control": false,
     "skus": [
       "COMBO-NOICHIEN",
@@ -13,20 +12,20 @@
     ],
     "status": "Đang chạy",
     "status_code": "running",
-    "status_at": "2026-11-10T20:00:00+07:00",
-    "spend_today_vnd": 1863999,
-    "budget_used_pct": 100,
+    "status_at": "2026-11-11T00:00:00+07:00",
+    "spend_today_vnd": 282610,
+    "budget_used_pct": 5.1,
     "iroas": {
-      "estimate_id": "iroas-01M65WDP1KYBY6HAQRQ649316P",
-      "mean": 4.492162090071757,
-      "p10": 3.3944355514497784,
-      "p90": 5.58684382956992,
-      "platform_roas": 8.092039943166185,
-      "breakeven_iroas": 4.955925132103842,
+      "estimate_id": "iroas-01M66S0N028TG2A5D1C01HCJED",
+      "mean": 4.415508887121634,
+      "p10": 3.329662310115614,
+      "p90": 5.389712879928472,
+      "platform_roas": 8.089159807429699,
+      "breakeven_iroas": 4.9607031345987815,
       "confidence": "reference"
     },
     "recommendation": {
-      "recommendation_id": "rec-551",
+      "recommendation_id": "rec-01M66S103EFSEPVWF431A97S0Z",
       "status": "recommend",
       "best": {
         "kind": "schedule_hours",
@@ -43,8 +42,8 @@
         ]
       },
       "confidence": "reference",
-      "created_at": "2026-11-11T01:02:10+07:00",
-      "scenario_id": "scn-2291",
+      "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+      "created_at": "2026-11-11T01:00:00+07:00",
       "data_as_of": "2026-11-11T01:00:00+07:00"
     },
     "started_at": "2026-07-14T00:00:00+07:00",
@@ -55,8 +54,8 @@
         "variant": "",
         "is_bundle": true,
         "list_price_vnd": 719000,
-        "price_effective_vnd": 719000,
-        "stock_available": 83,
+        "price_effective_vnd": 574000,
+        "stock_available": 76,
         "unit_cost_vnd": 473000
       },
       {
@@ -66,7 +65,7 @@
         "is_bundle": false,
         "list_price_vnd": 45000,
         "price_effective_vnd": 45000,
-        "stock_available": 297,
+        "stock_available": 296,
         "unit_cost_vnd": 18000
       },
       {
@@ -75,8 +74,8 @@
         "variant": "",
         "is_bundle": false,
         "list_price_vnd": 690000,
-        "price_effective_vnd": 690000,
-        "stock_available": 83,
+        "price_effective_vnd": 531000,
+        "stock_available": 76,
         "unit_cost_vnd": 455000
       }
     ],
@@ -120,21 +119,22 @@
       }
     ],
     "goal": {
-      "goal_id": "goal-cd002-1111",
+      "goal_id": "goal-01M66S0S7208RH0Z7G6JA3DDVY",
       "kind": "profit",
       "label": "Lợi nhuận tới 00:00 12/11",
       "deadline": "2026-11-12T00:00:00+07:00",
       "target_units": null,
-      "confirmed_by": "u-lead-1",
+      "confirmed_by": "lead-1",
       "version": 1
     }
   },
   "meta": {
     "data_as_of": "2026-11-11T01:00:00+07:00",
-    "computed_at": "2026-11-11T01:02:10+07:00",
+    "computed_at": "2026-11-11T01:00:00+07:00",
     "compute_state": "fresh",
     "confidence": null,
     "sources": [],
-    "cache_hit": null
+    "cache_hit": null,
+    "total": null
   }
 }

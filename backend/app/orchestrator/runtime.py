@@ -35,6 +35,7 @@ from app.orchestrator.alerts_eval import AlertEvaluator
 from app.orchestrator.event_log import EventLogSink
 from app.orchestrator.recompute import Orchestrator
 from app.orchestrator.stream import StreamHub
+from app.simulator.locks import register_live_write_lock, unregister_live_write_lock
 from app.warehouse.db import Database
 
 log = get_logger(__name__)
@@ -93,6 +94,8 @@ class Runtime:
         return self.evaluator.on_restart(conn)
 
     def start(self) -> None:
+        # AI compute tools (no request at hand) find the live write lock here (M5 Q5)
+        register_live_write_lock(self.lock)
         self.hub.bind_loop()
         self.bus.subscribe("*", self.event_log)
         self.bus.subscribe("*", self.hub.on_event)
@@ -110,6 +113,7 @@ class Runtime:
         await self.control.stop()
         await self.watcher.stop()
         await self.orchestrator.stop()
+        unregister_live_write_lock(self.lock)
 
     async def settle(self) -> None:
         """Wait until the bus and the recompute worker are both idle (jump/tests)."""

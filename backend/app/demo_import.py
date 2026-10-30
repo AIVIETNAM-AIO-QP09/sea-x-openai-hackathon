@@ -3,6 +3,19 @@
 Run from backend/: uv run python -m app.demo_import --serve
 History trains the models; only live_11_11 supplies sale-day observations.
 All staging, cursors, reports and DB writes stay in a separate output directory.
+
+Two ways to bring in 11.11:
+
+* ``--until <clock>`` (default): the live CSVs are cut at the clock into
+  ``<output>/observations`` (ads by their own hour, no reporting lag);
+* ``--replay-hour H``: the live folder is written exactly as the demo replay writes it after
+  hour ``H`` (``app.live.replay``: orders/stock to ``H:59``, ads ``adsLagHours`` behind) into
+  ``<output>/live_stream`` and loaded from there. A server started with
+  ``LIVE_DIR=<output>/live_stream`` then continues from the same cursor, and "back to
+  01:00" (``reset`` + ``jump 0``) gives back the very same state (``scripts/demo.mjs``).
+
+``--estimate-ads`` runs only the iROAS estimate; ``--models`` runs backtest + fit +
+estimate-ads.
 """
 
 from __future__ import annotations
@@ -11,7 +24,7 @@ import argparse
 import csv
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -64,16 +77,43 @@ def main() -> None:
     parser.add_argument("--shop", type=Path, default=Path("../mock-data/out/demo"))
     parser.add_argument("--output", type=Path, default=Path("data/hackathon-live"))
     parser.add_argument("--until", default="2026-11-11T01:00:00+07:00")
+    parser.add_argument(
+        "--replay-hour",
+        type=int,
+        default=None,
+        help="Load 11.11 through the replay folder up to H:59 (replaces --until)",
+    )
     parser.add_argument("--models", action="store_true", help="Backtest, forecast and estimate ads")
+    parser.add_argument("--estimate-ads", action="store_true", help="Only estimate ads (iROAS)")
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
     shop, output = args.shop.resolve(), args.output.resolve()
     until = datetime.fromisoformat(args.until)
+    if args.replay_hour is not None and not 0 <= args.replay_hour <= 23:
+        parser.error("--replay-hour must be 0-23.")
     # A new directory prevents clock rewind or mixing two shops in one cursor/DB.
     if output.exists():
         parser.error("Output already exists; choose a new --output directory. Nothing was reset.")
-    hashes = stage_live(shop, output / "observations", until)
+    from app.live.replay import load_replay, replay_source, write_live_stream
+
+    if args.replay_hour is None:
+        hashes = stage_live(shop, output / "observations", until)
+        live_dir = output / "observations"
+    else:
+        source = replay_source(shop)
+        load_replay(source)  # fail fast without a replay file
+        paths = [shop / name for name in REFERENCES] + [source]
+        hashes = {
+            p.relative_to(shop).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in paths
+        }
+        live_dir = output / "live_stream"
+        status = write_live_stream(source, live_dir, args.replay_hour)
+        day = date.fromisoformat(status["ngay"])
+        until = datetime(day.year, day.month, day.day, tzinfo=VN) + timedelta(
+            hours=args.replay_hour + 1
+        )
     from app.ingest.pipeline import ingest_files, ingest_live_delta
     from app.warehouse import repo
     from app.warehouse.db import Database
@@ -87,7 +127,7 @@ def main() -> None:
     if any(f.status == "failed" for f in baseline.files):
         database.close()
         raise RuntimeError("Baseline ingestion failed; inspect pipeline diagnostics.")
-    live = ingest_live_delta(database.write, output / "observations", build_panel=True)
+    live = ingest_live_delta(database.write, live_dir, build_panel=True)
     report = {
         "shop": shop.name,
         "clock": until.isoformat(),
@@ -99,11 +139,18 @@ def main() -> None:
     database.close()
     if live.ingest and any(f.status == "failed" for f in live.ingest.files):
         raise RuntimeError("Live ingestion failed; inspect import-report.json.")
-    if args.models:
+    commands = (
+        ["backtest", "fit", "estimate-ads"]
+        if args.models
+        else ["estimate-ads"]
+        if args.estimate_ads
+        else []
+    )
+    if commands:
         import subprocess
         import sys
 
-        for command in ["backtest", "fit", "estimate-ads"]:
+        for command in commands:
             subprocess.run(
                 [sys.executable, "-m", "app.cli", command, "--db", str(output / "demo.duckdb")],
                 check=True,

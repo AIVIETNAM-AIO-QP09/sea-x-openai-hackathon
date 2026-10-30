@@ -163,6 +163,14 @@ uv run python -m app.cli fit
 uv run python -m app.cli estimate-ads
 ```
 
+Chuẩn bị demo pitch bằng **một lệnh** (dựng DB mới tới 01:00 ngày 11.11, đặt mục tiêu CD002, làm nóng màn So sánh, bật backend với AI replay + web), xem [runbook](docs/demo/runbook.md):
+
+```powershell
+node scripts/demo.mjs                                   # hoặc --db <file .duckdb có sẵn>, --api-port/--web-port
+node scripts/demo.mjs jump 13                           # nhảy dữ liệu tới 13:59; home = về 01:00
+cd backend; uv run python -m eval.rehearsal --base-url http://localhost:8000   # diễn tập 2 lượt, ĐẠT/LỖI từng cảnh
+```
+
 Bản demo Cloudflare: <https://hackathon.dangphuc.me>. Deploy dùng `cf` CLI,
 Worker `megaday-hackathon` và D1 `hackathon-db`; hiện frontend dùng dữ liệu mẫu,
 backend Python/DuckDB chưa deploy. Mỗi push vào `main` tự deploy sau khi mọi

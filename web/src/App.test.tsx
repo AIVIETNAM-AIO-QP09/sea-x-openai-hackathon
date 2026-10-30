@@ -34,7 +34,7 @@ describe('App shell + Shift overview (fixture mode)', () => {
     ]);
   });
 
-  it('renders the CD002 fryer recommendation from fixtures', async () => {
+  it('renders the CD002 fryer recommendation from the 01:00 API snapshot', async () => {
     renderAt('/');
     const attention = await screen.findByRole('region', { name: /Cần xem ngay/ });
     const card = within(attention).getByText('Nồi chiên không dầu mini 2L').closest('li');
@@ -42,14 +42,22 @@ describe('App shell + Shift overview (fixture mode)', () => {
     const c = within(card as HTMLElement);
     expect(c.getByText('Chỉ chạy 0–2h, 12–14h')).toBeInTheDocument();
     expect(c.getByText('Tham khảo')).toBeInTheDocument();
-    expect(await c.findByText('Lợi hơn ~4,3 tr')).toBeInTheDocument();
+    expect(await c.findByText('Lợi hơn ~1,2 tr')).toBeInTheDocument();
+    expect(c.getByText('Còn 76 sp · hết khoảng 16:00')).toBeInTheDocument();
     expect(c.getByRole('link', { name: /So sánh/ })).toHaveAttribute('href', '/sku/NOICHIEN2L/compare');
   });
 
   it('shows data clock and open alert count in the top bar', async () => {
     renderAt('/');
-    expect(await screen.findByText('Dữ liệu tới 14:59')).toBeInTheDocument();
-    expect(await screen.findByText('Cảnh báo 3')).toBeInTheDocument();
+    expect(await screen.findByText('Dữ liệu tới 01:00')).toBeInTheDocument();
+    expect(await screen.findByText('Cảnh báo 1')).toBeInTheDocument();
+  });
+
+  it('SKU table: 50 rows in the bundle, real total 300', async () => {
+    renderAt('/');
+    expect(await screen.findByRole('heading', { name: 'Toàn bộ SKU (300)' })).toBeInTheDocument();
+    expect(await screen.findByText('Đã tải 50/300 mã')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tải thêm' })).not.toBeInTheDocument();
   });
 
   it('navigates to a placeholder screen with title and empty state', async () => {

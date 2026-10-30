@@ -17,13 +17,14 @@
   ``ScenarioResult`` (``spend``, ``units_sold``, ``leftover_units`` for every action), the
   ``Recommendation`` with ``reason_sources`` and ``zone_bar.inputs``; ``meta.cache_hit``.
 
-Runs are serialised by one lock: the first run at a new start computes the forecasts
+Runs are serialised by the shared simulation locks (``app.simulator.locks``: live write
+lock, then ``RUN_LOCK``): the first run at a new start computes the forecasts
 (~10–25 s); later runs read them from ``forecasts`` (< 1 s).
 """
 
 from __future__ import annotations
 
-import threading
+import contextlib
 import time
 from collections import OrderedDict
 from typing import Annotated, Any, Literal
@@ -41,6 +42,8 @@ from app.core.timeutil import utcnow
 from app.economics.breakeven import BreakevenRequest, ZoneBar, uniform_breakeven
 from app.economics.goals import active_goal
 from app.simulator.constraints import check_sku_toggle
+from app.simulator.locks import RUN_LOCK
+from app.simulator.locks import live_write_lock as live_write_lock_of
 from app.simulator.schemas import (
     ActionSpec,
     Dist,
@@ -57,7 +60,15 @@ from app.warehouse.repo import fetch_all, fetch_one
 
 router = APIRouter(tags=["scenarios"])
 
-_RUN_LOCK = threading.Lock()
+
+def live_write_lock(request: Request) -> contextlib.AbstractContextManager[Any]:
+    """The write lock of the live path (watcher load, orchestrator recompute, alerts) of
+    this app's runtime; taken **before** ``RUN_LOCK`` (``app.simulator.locks``), the same
+    order as the orchestrator and the AI compute tools (M5 Q5)."""
+    rt = getattr(request.app.state, "runtime", None)
+    return live_write_lock_of(getattr(rt, "lock", None))
+
+
 _RUNS: OrderedDict[str, ScenarioRun] = OrderedDict()
 _RUNS_MAX = 64
 
@@ -489,7 +500,7 @@ def run_scenario(
         {**body.model_dump(exclude={"disable_skus"}), "goal_id": goal_id}
     )
     events: list[RecommendationChanged] = []
-    with _RUN_LOCK:
+    with live_write_lock(request), RUN_LOCK:
         out: SimOutput = run_simulation(conn, req, requested_by="user", events=events)
     rec = out.recommendation
     if out.blocked:
