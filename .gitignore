@@ -1,0 +1,28 @@
+# Dữ liệu sinh ra
+mock-data/out/
+backend/data/
+backend/eval/reports/
+
+# Bí mật
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+web/dist/
+
+# Hệ điều hành và editor
+.DS_Store
+Thumbs.db
+.idea/
