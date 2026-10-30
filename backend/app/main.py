@@ -23,6 +23,8 @@ from app.core.config import Settings, get_settings
 from app.core.events import EventBus
 from app.core.ids import new_id
 from app.core.logging import configure_logging, get_logger
+from app.governance.middleware import install_audit_middleware
+from app.orchestrator.runtime import Runtime
 from app.warehouse.db import Database, get_db
 
 log = get_logger(__name__)
@@ -41,10 +43,15 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         app.state.db = database
         app.state.bus = bus
         app.state.settings = settings
+        # ORC-01 / LIVE-01: event_log + SSE hub, orchestrator, alerts, live watcher
+        runtime = Runtime(database, bus, settings)
+        app.state.runtime = runtime
+        runtime.start()
         log.info("startup", tables=len(tables), db=str(database.path), env=settings.app_env)
         try:
             yield
         finally:
+            await runtime.stop()
             await bus.stop()
             database.close()
             log.info("shutdown")
@@ -79,6 +86,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         response.headers["X-Request-ID"] = request_id
         return response
 
+    install_audit_middleware(app)
     install_error_handlers(app)
     app.include_router(api_router)
 

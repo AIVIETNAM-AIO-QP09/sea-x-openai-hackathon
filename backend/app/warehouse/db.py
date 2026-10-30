@@ -55,6 +55,18 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         "  SELECT arg_max(recommendation_id, created_at) FROM recommendations"
         "  WHERE NOT what_if GROUP BY campaign_id)",
     ),
+    (
+        4,
+        "alerts dedupe/ack/resolve columns, actions.note (M4 quản trị, GOV-01)",
+        "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS dedupe_key VARCHAR;"
+        " ALTER TABLE alerts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;"
+        " ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;"
+        " ALTER TABLE alerts ADD COLUMN IF NOT EXISTS occurrences INTEGER DEFAULT 1;"
+        " ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;"
+        " ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_by VARCHAR;"
+        " ALTER TABLE actions ADD COLUMN IF NOT EXISTS note VARCHAR;"
+        " ALTER TABLE actions ADD COLUMN IF NOT EXISTS verified_by VARCHAR",
+    ),
 ]
 
 _TABLE_RE = re.compile(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", re.IGNORECASE)
