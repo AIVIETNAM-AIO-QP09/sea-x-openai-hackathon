@@ -140,6 +140,9 @@ class ScenarioResult(BaseModel):
     goal_eligible: bool = True  # [DEV] meets the goal constraint (05 §4)
     p_target: float | None = None  # [DEV] sell_target: P(Σ sold ≥ N)
     goal_note: str | None = None  # [DEV]
+    # [DEV] key of a better-ranked action with identical results (05 §9 step 3), e.g.
+    # pause_until_restock ≡ pause when nothing arrives in the horizon
+    duplicate_of: str | None = None
 
 
 class FlipCondition(BaseModel):
@@ -193,6 +196,9 @@ class SimOutput(BaseModel):
     cache_hit: bool = False
     input_hash: str
     blocked: bool = False  # missing cost / price: nothing simulated
+    # [DEV] run with param_overrides / session_id / its own action list: persisted, but its
+    # recommendation never replaces the campaign's active one (service.is_what_if)
+    what_if: bool = False
     timings_ms: dict[str, float] = Field(default_factory=dict)
 
 

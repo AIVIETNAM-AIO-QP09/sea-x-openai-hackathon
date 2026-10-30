@@ -112,7 +112,7 @@ URL: `/` · `/compare` · `/sku/NOICHIEN2L/compare` · `/campaign/CD002/compare`
 - "Cần xem ngay": trang đầu `GET /skus?sort=priority&limit=200`, lọc theo 09 §2.1 (cảnh báo mở, đề xuất khác "Tiếp tục", hoặc `none_meets_goal`). SKU hết hàng mà không có cảnh báo hay đề xuất **không** vào khối. Chúng vẫn đứng đầu bảng (`priority_score` 50). Khi có API cảnh báo (M4), chúng vào khối qua `open_alerts`.
 - **Một thẻ cho một quyết định:** gom các dòng cùng `recommendation_id` (3 size áo = 1 thẻ "3 phân loại"; nồi chiên + giấy lót + combo = 1 thẻ "và 2 SKU cùng chiến dịch"). Không có đề xuất thì gom theo `product_id`. Lý do: với dữ liệu thật, gom theo sản phẩm làm CD002 hiện 3 thẻ trùng nội dung. Nút "So sánh" mở `/sku/<SKU dẫn đầu>/compare`.
 - "Còn 83 sp · hết khoảng 17:00" = `meta.data_as_of` + `hours_of_cover.p50`. `p50 = null` → "chưa hết trong 72 giờ tới", cột "Đủ bán" ghi "> 72".
-- Bảng toàn bộ: `useInfiniteQuery`, `limit=50`, nút "Tải thêm" theo `next_cursor`. Có ô tìm (`q`, debounce 300 ms) và sắp xếp (`priority|sku|cover|sold_today`). API không trả tổng số dòng nên ghi "N mã đã tải, còn nữa".
+- Bảng toàn bộ: `useInfiniteQuery`, `limit=50`, nút "Tải thêm" theo `next_cursor`. Có ô tìm (`q`, debounce 300 ms) và sắp xếp (`priority|sku|cover|sold_today`). Tiêu đề "Toàn bộ SKU (N)" và "Đã tải n/N mã" theo `meta.total` (thêm ở M3-api §6 S5). Không có `meta.total` thì ghi "N mã đã tải, còn nữa".
 - `/me` → "Vai trò: Vận hành (u-ops-1)". `/freshness` có nguồn `stale|missing` → băng vàng 09 §4. Dòng `computing|queued` mờ 60% + "Đang cập nhật". Lỗi → `ErrorState` (thông điệp, mã lỗi, "Thử lại"). Rỗng → "Chưa có dữ liệu SKU" + "Nhập dữ liệu".
 
 ### Q-W3. So sánh lựa chọn: chuỗi gọi
@@ -131,7 +131,7 @@ URL: `/` · `/compare` · `/sku/NOICHIEN2L/compare` · `/campaign/CD002/compare`
 
 ### Q-W6. Thanh trượt và `POST /scenarios/run`
 - Gửi lại `ScenarioRun.request` (đã có `start`, `horizon_hours`, `seed`), chỉ đổi `samples` (300 khi kéo, debounce 250 ms; 1.000 khi thả) và `param_overrides`. Đã kiểm: gửi cùng body lần hai trả cùng `scenario_id`, `meta.cache_hit = true`, 0,18 s.
-- **Khóa của thanh trượt chỉ lấy từ thanh trượt:** bỏ `leftover_value_per_unit` và `restock_delay_days` (kể cả dạng `key@SKU`) có sẵn trong `request` echo. Lý do: xem §13 mục 1–2.
+- **(Đã bỏ chỗ né)** Trước đây web bỏ `leftover_value_per_unit` và `restock_delay_days` có sẵn trong `request` echo (§13 mục 1–2). Hai lỗi đó đã sửa ở backend: `request` echo là đúng request đã chạy. Nay web giữ `param_overrides` của nó, thanh trượt ghi đè khóa của mình.
 - V: min = −(giá vốn lớn nhất của SKU không phải combo), max = `price_max_vnd`, kẹp ở client. 400 `PARAM_OUT_OF_RANGE` vẫn hiện thông điệp của API. Nhãn mới "Giá trị ròng 1 sp còn lại sau hạn, so với giá vốn (V)", ghi "0đ = bán sau vẫn hòa vốn". Chưa chạm thì hiện "mặc định theo từng SKU", hoặc V của `zone_bar.inputs` nếu có. Override không có `@SKU` nên áp cho mọi SKU của chiến dịch; ghi rõ dưới thanh.
 - Hàng về trễ: −7..7 ngày. Fixture giữ hành vi cũ (chỉ ước tính, max V = m khi có `inputs`).
 
@@ -139,7 +139,7 @@ URL: `/` · `/compare` · `/sku/NOICHIEN2L/compare` · `/campaign/CD002/compare`
 `Source.href` thật là đường API. `webHref` đổi `/api/v1/skus/X[/…]` → `/sku/X`; `/api/v1/scenarios|campaigns|recommendations/…` → `#tier-3`. Tầng 3 có thêm mục "Cam kết chương trình sale" lấy từ `commitments`. Thêm nhãn loại `commitment`, `snapshot`, `panel`. Khi tách số chính trong câu, khoảng giờ "00:00–02:00" giữ nguyên một cụm.
 
 ### Q-W8. Tầng 3 và thẻ hành động
-`param_version` là object → "N tham số, đều là mặc định (v0)", hoặc liệt kê các khóa khác 0 (`-1` = giả định của lần chạy). Thêm dòng "Bắt đầu · kỳ" lấy từ `request`. Thẻ hành động không khả thi hiện `violation_details` và "Nếu bỏ ràng buộc: <E[J]>" (cái giá của ràng buộc). `duplicate_of`, nếu API thêm vào `ScenarioResult`, hiện "Kết quả trùng hệt …".
+`param_version` là object → "N tham số, đều là mặc định (v0)", hoặc liệt kê các khóa khác 0 (`-1` = giả định của lần chạy). Thêm dòng "Bắt đầu · kỳ" lấy từ `request`. Thẻ hành động không khả thi hiện `violation_details` và "Nếu bỏ ràng buộc: <E[J]>" (cái giá của ràng buộc). `duplicate_of` (đã có trong `ScenarioResult`) hiện "Kết quả trùng hệt …".
 
 ## 13. Chạy thử end-to-end (30/10)
 
@@ -158,11 +158,11 @@ Backend `:8001` trên bản sao DB demo (dữ liệu tới 11/11 00:00; bản sa
 
 **Chưa kiểm:** không có trình duyệt, nên **chưa nhìn bằng mắt** bố cục, màu, gạch chéo vùng pause, popover, chế độ tối, màn hẹp. Chưa đo thời gian vẽ lại khi kéo trên trình duyệt thật. Form mục tiêu chỉ kiểm bằng test (API giả) và curl, chưa bấm trên server thật. "Lưu bản nháp/Gửi duyệt" chưa có API (M4).
 
-**Vấn đề API phát hiện (không sửa backend):**
-1. `GET /scenarios/{id}` (dựng lại từ DB) của đề xuất CD002 đang hiệu lực trong DB demo trả `request.param_overrides = {"leftover_value_per_unit": 9000000}` và `actions` đủ 6 hành động. Gửi lại nguyên văn → 400. Có vẻ `request` được dựng từ một lần chạy khác, hoặc override được lưu trước khi kiểm hợp lệ. Web đã né (Q-W6).
-2. Mỗi `POST /scenarios/run` có `param_overrides` (kéo thanh trượt) **tạo đề xuất mới và thay đề xuất đang hiệu lực** của chiến dịch. Mở lại màn thì "đề xuất" là kết quả what-if của người vừa kéo. Nên: lần chạy có override (hoặc có `session_id`) không supersede, hoặc API có cờ không lưu.
-3. `violation_details` chứa giờ ISO UTC thô ("từ 2026-11-10T17:00:00+00:00"); nên là giờ VN ("00:00 11/11").
-4. `CampaignDetail.recommendation.data_as_of` trả dạng `Z`, khác quy ước `+07:00`.
-5. `/skus` không có tổng số dòng (09 §2.1 "Toàn bộ SKU (300)"). `CampaignDetail.goal.label` chỉ là "Lợi nhuận" (không có hạn như `/goals`); web tự ghép hạn.
-6. `ScenarioResult.duplicate_of` chưa có trong OpenAPI (chỉ có ở `Selection` nội bộ).
+**Vấn đề API phát hiện** (mục 1–6 đã sửa, xem M3-api §6 "Sửa lỗi nhỏ M3"):
+1. **[Đã sửa]** `GET /scenarios/{id}` (dựng lại từ DB) của đề xuất CD002 đang hiệu lực trong DB demo trả `request.param_overrides = {"leftover_value_per_unit": 9000000}` và `actions` đủ 6 hành động. Gửi lại nguyên văn → 400. Có vẻ `request` được dựng từ một lần chạy khác, hoặc override được lưu trước khi kiểm hợp lệ. Web đã né (Q-W6).
+2. **[Đã sửa]** Mỗi `POST /scenarios/run` có `param_overrides` (kéo thanh trượt) **tạo đề xuất mới và thay đề xuất đang hiệu lực** của chiến dịch. Mở lại màn thì "đề xuất" là kết quả what-if của người vừa kéo. Nên: lần chạy có override (hoặc có `session_id`) không supersede, hoặc API có cờ không lưu.
+3. **[Đã sửa]** `violation_details` chứa giờ ISO UTC thô ("từ 2026-11-10T17:00:00+00:00"); nên là giờ VN ("00:00 11/11").
+4. **[Đã sửa]** `CampaignDetail.recommendation.data_as_of` trả dạng `Z`, khác quy ước `+07:00`.
+5. **[Đã sửa]** `/skus` không có tổng số dòng (09 §2.1 "Toàn bộ SKU (300)"). `CampaignDetail.goal.label` chỉ là "Lợi nhuận" (không có hạn như `/goals`); web tự ghép hạn.
+6. **[Đã sửa]** `ScenarioResult.duplicate_of` chưa có trong OpenAPI (chỉ có ở `Selection` nội bộ).
 7. Chưa có `/alerts`, `/decisions` (M4): khi chạy API thật, số cảnh báo trên thanh trên cùng là 0.

@@ -31,3 +31,19 @@ def test_cache_key_normalises_override_numbers() -> None:
     )
     req = SimRequest(campaign_id="CDX", goal_id="goal-test")
     assert _key(a, req, ACTS) == _key(b, req, ACTS)
+
+
+def test_what_if_runs() -> None:
+    """Only a standard run (no override, no session, default actions) replaces the active
+    recommendation (sửa lỗi nhỏ M3); the cache key separates session runs."""
+    from app.simulator.service import is_what_if
+
+    std = SimRequest(campaign_id="CDX", goal_id="goal-test")
+    assert not is_what_if(std, ACTS, ACTS)
+    assert not is_what_if(std, list(reversed(ACTS)), ACTS)  # same set, other order
+    assert is_what_if(std, ACTS[:1], ACTS)
+    assert is_what_if(std.model_copy(update={"param_overrides": {"x": 0.0}}), ACTS, ACTS)
+    sess = std.model_copy(update={"session_id": "ais-1"})
+    assert is_what_if(sess, ACTS, ACTS)
+    inp = make_inputs([sku("A", 24)])
+    assert _key(inp, std, ACTS) != _key(inp, sess, ACTS)

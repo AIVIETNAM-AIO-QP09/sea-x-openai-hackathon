@@ -109,6 +109,11 @@ def scenario_results(run: SimRun, sel: Selection | None = None) -> list[Scenario
                 goal_eligible=sel.eligible[i] if sel is not None else True,
                 p_target=sel.p_target[i] if sel is not None else None,
                 goal_note=sel.notes.get(i) if sel is not None else None,
+                duplicate_of=(
+                    run.runs[sel.duplicate_of[i]].action.key
+                    if sel is not None and i in sel.duplicate_of
+                    else None
+                ),
             )
         )
     return out
@@ -642,16 +647,23 @@ def persist(
     samples: int,
     seed: int,
     requested_by: str,
+    request_json: str | None = None,
+    what_if: bool = False,
 ) -> RecommendationChanged | None:
     """Write ``scenarios``, ``scenario_results``, ``recommendations``; the previous active
     recommendation of the campaign gets ``superseded_by`` (never deleted). Returns the
-    ``RecommendationChanged`` event when best action or status changed."""
+    ``RecommendationChanged`` event when best action or status changed.
+
+    ``what_if`` (run with ``param_overrides``, ``session_id`` or its own action list): the
+    rows are written (``GET /scenarios/{id}``, sources) but the recommendation is stored with
+    ``what_if = TRUE``: it never becomes the campaign's active recommendation and supersedes
+    nothing (sửa lỗi nhỏ M3, lỗi 2). ``request_json`` = the request as run, echoed back."""
     rec = out.recommendation
     now = utcnow()
     conn.execute(
         "INSERT INTO scenarios (scenario_id, campaign_id, goal_id, start_at, horizon_hours,"
         " param_version, overrides, inputs_ref, samples, seed, requested_by, created_at,"
-        " input_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " input_hash, request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             out.scenario_id,
             inp.campaign_id,
@@ -666,6 +678,7 @@ def persist(
             requested_by,
             now,
             out.input_hash,
+            request_json,
         ],
     )
     seen: set[str] = set()
@@ -694,15 +707,16 @@ def persist(
         )
     prev = conn.execute(
         "SELECT recommendation_id, status, best_action FROM recommendations WHERE campaign_id = ?"
-        " AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 1",
+        " AND superseded_by IS NULL AND NOT coalesce(what_if, FALSE)"
+        " ORDER BY created_at DESC LIMIT 1",
         [inp.campaign_id],
     ).fetchone()
     best_json = rec.best.model_dump_json() if rec.best else None
     conn.execute(
         "INSERT INTO recommendations (recommendation_id, scenario_id, campaign_id, status,"
         " best_action, runner_up, p_best, expected_gain_vnd, zone_bar, flip_conditions,"
-        " confidence, reasons, superseded_by, created_at, input_hash)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+        " confidence, reasons, superseded_by, created_at, input_hash, what_if)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
         [
             rec.recommendation_id,
             out.scenario_id,
@@ -718,11 +732,14 @@ def persist(
             rec.reasons,
             now,
             out.input_hash,
+            what_if,
         ],
     )
+    if what_if:
+        return None
     conn.execute(
         "UPDATE recommendations SET superseded_by = ? WHERE campaign_id = ?"
-        " AND superseded_by IS NULL AND recommendation_id <> ?",
+        " AND superseded_by IS NULL AND NOT coalesce(what_if, FALSE) AND recommendation_id <> ?",
         [rec.recommendation_id, inp.campaign_id, rec.recommendation_id],
     )
     if prev is None:

@@ -41,6 +41,20 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         "model_scores.wape_floor (M2, 03 §7.3)",
         "ALTER TABLE model_scores ADD COLUMN IF NOT EXISTS wape_floor DOUBLE",
     ),
+    (
+        3,
+        "scenarios.request, recommendations.what_if (sửa lỗi nhỏ M3)",
+        "ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS request JSON;"
+        " ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS what_if BOOLEAN DEFAULT FALSE;"
+        # older what-if runs (with overrides) superseded the standard one: mark them, then
+        # give each campaign back its latest standard recommendation
+        " UPDATE recommendations SET what_if = TRUE WHERE scenario_id IN (SELECT scenario_id"
+        "  FROM scenarios WHERE coalesce(CAST(overrides AS VARCHAR), '{}') NOT IN ('{}', 'null'));"
+        " UPDATE recommendations SET what_if = FALSE WHERE what_if IS NULL;"
+        " UPDATE recommendations SET superseded_by = NULL WHERE recommendation_id IN ("
+        "  SELECT arg_max(recommendation_id, created_at) FROM recommendations"
+        "  WHERE NOT what_if GROUP BY campaign_id)",
+    ),
 ]
 
 _TABLE_RE = re.compile(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", re.IGNORECASE)

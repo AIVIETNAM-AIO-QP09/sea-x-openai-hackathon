@@ -179,7 +179,7 @@ def list_skus(
     status = campaign_status(conn, ck.as_of)
     return Page[SkuSummary](
         data=[_summary(r, status) for r in page],
-        meta=Meta(data_as_of=ck.as_of, computed_at=utcnow()),
+        meta=Meta(data_as_of=ck.as_of, computed_at=utcnow(), total=len(rows)),
         next_cursor=nxt,
     )
 

@@ -230,7 +230,8 @@
     "compute_state": "fresh",
     "confidence": null,
     "sources": [],
-    "cache_hit": null
+    "cache_hit": null,
+    "total": 5
   },
   "next_cursor": null
 }

@@ -567,6 +567,7 @@ Frontend dùng `EventSource` + map event → `queryClient.invalidateQueries(...)
   - Thêm `disable_skus` cho what-if "tắt riêng SKU": 409 `CONSTRAINT_VIOLATION` khi ngân sách dùng chung.
   - Thiếu giá vốn → 422.
   - Phản hồi `ScenarioRun` có `request` (đã điền `start`, `horizon_hours`), `results[].key/label`, `recommendation.reason_sources[]`, `best_label`, `active`.
+  - Lần chạy có `param_overrides`, `session_id` hoặc `actions` riêng là what-if: vẫn lưu và trả kết quả, nhưng đề xuất mang `what_if = true` và không thay đề xuất đang hiệu lực. `results[].duplicate_of`. `/skus` có `meta.total`.
   - `zone_bar.inputs` (= body `/scenarios/breakeven`) chỉ có khi tái tạo đúng ngưỡng.
 - **`/scenarios/breakeven`:** thêm `pi_continue_vnd`, `status`, `q_star_units`, `reason`. Body nhận `alt_leftover_values`.
 - **`/campaigns/{id}`:** thêm `price_max_vnd` (max thanh trượt V), `sku_detail`, `goal`, `commitments`. `/campaigns/{id}/iroas` có `iroas.p50` = trung bình hậu nghiệm.

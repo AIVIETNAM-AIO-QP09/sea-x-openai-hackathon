@@ -130,7 +130,8 @@ def active_recommendations(
         conn,
         "SELECT r.recommendation_id, r.campaign_id, r.status, r.best_action, r.confidence,"
         " r.created_at, r.scenario_id, s.inputs_ref FROM recommendations r"
-        " LEFT JOIN scenarios s USING (scenario_id) WHERE r.superseded_by IS NULL" + where,
+        " LEFT JOIN scenarios s USING (scenario_id) WHERE r.superseded_by IS NULL"
+        " AND NOT coalesce(r.what_if, FALSE)" + where,
         [] if campaign_ids is None else [campaign_ids],
     )
     out: dict[str, dict[str, Any]] = {}
@@ -147,9 +148,20 @@ def active_recommendations(
             "confidence": r["confidence"],
             "created_at": r["created_at"],
             "scenario_id": r["scenario_id"],
-            "data_as_of": ref.get("data_as_of"),
+            "data_as_of": _ts(ref.get("data_as_of")),
         }
     return out
+
+
+def _ts(v: Any) -> datetime | None:
+    """``inputs_ref.data_as_of`` is stored as JSON text (UTC, ``Z``): parse it so the API
+    writes it with ``+07:00`` like every other time."""
+    if isinstance(v, datetime) or v is None:
+        return v
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _cover(stock: float, fc: ForecastView, at: datetime) -> dict[str, float | None] | None:

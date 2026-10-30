@@ -48,7 +48,8 @@ export type SkuDetail = Omit<S['SkuDetail'], SkuNarrowed> & Pick<SkuListItem, Sk
 type Defaulted<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 /** `pause_feasible = false` → show `verdict_note` instead of "Pause tốt hơn" (05 §7.2). */
 export type ZoneBar = Defaulted<S['ZoneBar'], 'pause_feasible' | 'pause_violations'>;
-export type Recommendation = Omit<Defaulted<S['RecommendationOut'], 'runner_up_meets_goal'>, 'zone_bar'> & {
+/** `what_if = true`: result of a run with overrides / session / own actions, never active. */
+export type Recommendation = Omit<Defaulted<S['RecommendationOut'], 'runner_up_meets_goal' | 'what_if'>, 'zone_bar'> & {
   zone_bar: ZoneBar | null;
 };
 export type ZoneVerdict = ZoneBar['verdict'];
@@ -62,8 +63,8 @@ export type SimRequest = S['ScenarioRunRequest'];
 /** `ScenarioRun.request`: the request as run (start, horizon filled). Re-send it to hit the cache. */
 export type SimRequestEcho = S['SimRequestOut'];
 export type ScenarioRun = Omit<S['ScenarioRun'], 'recommendation'> & { recommendation: Recommendation | null };
-/** `duplicate_of` (key of an identical, better-ranked action) is optional: not yet in OpenAPI. */
-export type ScenarioResult = S['ScenarioResultOut'] & { duplicate_of?: string | null };
+/** `duplicate_of` = key of an identical, better-ranked action (e.g. pause_until_restock ≡ pause). */
+export type ScenarioResult = S['ScenarioResultOut'];
 
 /** One entry of `CampaignDetail.commitments` (backend: dict). */
 export type Commitment = {

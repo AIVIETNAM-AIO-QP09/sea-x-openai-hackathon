@@ -140,7 +140,7 @@ const CAMPAIGN: CampaignDetail = {
   ],
   price_max_vnd: 690_000,
   commitments: [{ kind: 'campaign_must_run', windows_local: [[0, 2]], text: 'Không tắt chiến dịch trong khung flash sale (đã cam kết với sàn)' }],
-  goal: { goal_id: 'goal-1', kind: 'profit', label: 'Lợi nhuận', deadline: '2026-11-12T00:00:00+07:00', target_units: null, confirmed_by: 'u-lead-1', version: 1 },
+  goal: { goal_id: 'goal-1', kind: 'profit', label: 'Lợi nhuận tới 00:00 12/11', deadline: '2026-11-12T00:00:00+07:00', target_units: null, confirmed_by: 'u-lead-1', version: 1 },
 };
 
 const ME = (lead: boolean) => ({

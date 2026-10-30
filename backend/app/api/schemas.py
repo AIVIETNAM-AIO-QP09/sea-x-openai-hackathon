@@ -45,6 +45,7 @@ class Meta(BaseModel):
     confidence: Confidence | None = None
     sources: list[SourceRef] = Field(default_factory=list)
     cache_hit: bool | None = None  # POST /scenarios/run only
+    total: int | None = None  # [DEV] rows matching the filters, all pages (GET /skus)
 
 
 class Envelope(BaseModel, Generic[T]):

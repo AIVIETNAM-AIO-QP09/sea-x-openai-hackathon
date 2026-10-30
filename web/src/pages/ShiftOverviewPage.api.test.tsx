@@ -147,6 +147,19 @@ describe('Tổng quan ca · real API shapes', () => {
     expect(calls).toContain('/skus?sort=priority&limit=50&cursor=CUR1');
   });
 
+  it('meta.total → "Toàn bộ SKU (N)" and "Đã tải n/N mã"', async () => {
+    stub((path) => {
+      const c = common(path);
+      if (c !== undefined) return c;
+      if (path === '/skus?sort=priority&limit=200') return { data: [sku({})], meta: { ...META, total: 2 }, next_cursor: null };
+      if (path === '/skus?sort=priority&limit=50') return { data: [sku({})], meta: { ...META, total: 2 }, next_cursor: 'CUR1' };
+      throw new Error(`unexpected ${path}`);
+    });
+    renderAt('/');
+    expect(await screen.findByRole('heading', { name: 'Toàn bộ SKU (2)' })).toBeInTheDocument();
+    expect(await screen.findByText('Đã tải 1/2 mã')).toBeInTheDocument();
+  });
+
   it('empty: no SKU → import call to action', async () => {
     stub((path) => common(path) ?? { data: [], meta: META, next_cursor: null });
     renderAt('/');

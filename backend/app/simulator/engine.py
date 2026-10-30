@@ -35,6 +35,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy.special import ndtri
 
+from app.core.timeutil import to_local
 from app.simulator.constraints import StockSetup, check_action, simulate_stock
 from app.simulator.inputs import SimInputs
 from app.simulator.policies import adstock, on_mask, spend_schedule
@@ -212,7 +213,7 @@ def simulate(
         spend_ctx = replace(spend_ctx, restock_t=inputs.restock_t(pt.restock_delay))
     acts = list(actions)
     n_a = len(acts)
-    labels = [h.isoformat() for h in inputs.hours]
+    labels = [f"{to_local(h):%H:%M %d/%m}" for h in inputs.hours]  # VN time, violation text
     spends = np.vstack([spend_schedule(a, spend_ctx) for a in acts])  # [A, T]
     masks = np.vstack([on_mask(a, spend_ctx) for a in acts])
     sq = spend_schedule(CONTINUE, spend_ctx)

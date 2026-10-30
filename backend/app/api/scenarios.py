@@ -9,6 +9,10 @@
   ``PARAM_OUT_OF_RANGE``; ``restock_delay_days`` accepts −7..7 (negative = arrives early).
 * ``samples``: the web sends 300 while a slider is dragged and 1000 on release.
 * Missing cost / price → 422 ``BLOCKING_DATA_ISSUE`` (details carry the reasons).
+* A run with ``param_overrides`` or ``session_id`` (slider, AI what-if) or its own action
+  list is a **what-if**: returned and stored like any run, but its recommendation has
+  ``what_if = true`` and never replaces the campaign's active one (only a standard run
+  supersedes; sửa lỗi nhỏ M3).
 * Response ``ScenarioRun``: the request as run (start / horizon resolved), every action's
   ``ScenarioResult`` (``spend``, ``units_sold``, ``leftover_units`` for every action), the
   ``Recommendation`` with ``reason_sources`` and ``zone_bar.inputs``; ``meta.cache_hit``.
@@ -33,7 +37,7 @@ from app.api.deps import Conn, Operator, Viewer, audit, publish
 from app.api.schemas import Envelope, LocalDatetime, Meta, Page, SourceRef
 from app.core.errors import DataQualityError, NotFound, ParamOutOfRange, ValidationFailed
 from app.core.events import RecommendationChanged
-from app.core.timeutil import to_utc, utcnow
+from app.core.timeutil import utcnow
 from app.economics.breakeven import BreakevenRequest, ZoneBar, uniform_breakeven
 from app.economics.goals import active_goal
 from app.simulator.constraints import check_sku_toggle
@@ -97,6 +101,8 @@ class RecommendationOut(Recommendation):
     runner_up_label: str | None = None
     reason_sources: list[SourceRef | None] = Field(default_factory=list)
     active: bool = True
+    # [DEV] result of a what-if run (overrides / session / own actions): never active
+    what_if: bool = False
 
 
 class ScenarioRun(BaseModel):
@@ -191,7 +197,7 @@ def reason_sources(conn: duckdb.DuckDBPyConnection, rec: Recommendation) -> list
 
 
 def rec_out(
-    conn: duckdb.DuckDBPyConnection, rec: Recommendation, *, active: bool = True
+    conn: duckdb.DuckDBPyConnection, rec: Recommendation, *, what_if: bool = False
 ) -> RecommendationOut:
     d = rec.model_dump()
     return RecommendationOut(
@@ -199,7 +205,24 @@ def rec_out(
         best_label=rec.best.label_vi() if rec.best else None,
         runner_up_label=rec.runner_up.label_vi() if rec.runner_up else None,
         reason_sources=reason_sources(conn, rec),
-        active=active and rec.superseded_by is None,
+        active=not what_if and rec.superseded_by is None,
+        what_if=what_if,
+    )
+
+
+def _rec_state(conn: duckdb.DuckDBPyConnection, rec: RecommendationOut) -> RecommendationOut:
+    """``superseded_by`` / ``what_if`` / ``active`` as stored now (a cached or remembered
+    run may have been superseded since)."""
+    row = conn.execute(
+        "SELECT superseded_by, coalesce(what_if, FALSE) FROM recommendations"
+        " WHERE recommendation_id = ?",
+        [rec.recommendation_id],
+    ).fetchone()
+    if row is None:
+        return rec
+    sup, wi = row[0], bool(row[1])
+    return rec.model_copy(
+        update={"superseded_by": sup, "what_if": wi, "active": sup is None and not wi}
     )
 
 
@@ -303,7 +326,8 @@ def rec_from_row(r: dict[str, Any], inputs_ref: Any) -> Recommendation:
 _REC_SQL = (
     "SELECT r.recommendation_id, r.scenario_id, r.campaign_id, r.status, r.best_action,"
     " r.runner_up, r.p_best, r.expected_gain_vnd, r.zone_bar, r.flip_conditions, r.confidence,"
-    " r.reasons, r.superseded_by, r.created_at, s.inputs_ref, s.goal_id"
+    " r.reasons, r.superseded_by, r.created_at, coalesce(r.what_if, FALSE) AS what_if,"
+    " s.inputs_ref, s.goal_id"
     " FROM recommendations r LEFT JOIN scenarios s USING (scenario_id)"
 )
 
@@ -336,18 +360,28 @@ def load_run(conn: duckdb.DuckDBPyConnection, scenario_id: str) -> ScenarioRun:
     order = {"continue": 0, "pause": 1, "reduce_budget": 2, "schedule_hours": 3}
     results.sort(key=lambda x: (order.get(x.action.kind, 9), x.key))
     rr = fetch_one(conn, _REC_SQL + " WHERE r.scenario_id = ?", [scenario_id])
-    rec = rec_out(conn, rec_from_row(rr, rr["inputs_ref"])) if rr else None
-    overrides = parse_json(s["overrides"]) or {}
-    req = SimRequestOut(
-        campaign_id=s["campaign_id"],
-        start=s["start_at"],
-        horizon_hours=s["horizon_hours"],
-        goal_id=s["goal_id"],
-        actions=[x.action for x in results] or None,
-        param_overrides=overrides,
-        samples=s["samples"],
-        seed=s["seed"],
+    rec = (
+        rec_out(conn, rec_from_row(rr, rr["inputs_ref"]), what_if=bool(rr["what_if"]))
+        if rr
+        else None
     )
+    stored = parse_json(s.get("request"))
+    if isinstance(stored, dict):
+        # the request exactly as run (actions null = default list, session_id kept)
+        req = SimRequestOut.model_validate(
+            {**stored, "start": s["start_at"], "horizon_hours": s["horizon_hours"]}
+        )
+    else:  # rows written before migration 3: rebuilt, actions = what was simulated
+        req = SimRequestOut(
+            campaign_id=s["campaign_id"],
+            start=s["start_at"],
+            horizon_hours=s["horizon_hours"],
+            goal_id=s["goal_id"],
+            actions=[x.action for x in results] or None,
+            param_overrides=parse_json(s["overrides"]) or {},
+            samples=s["samples"],
+            seed=s["seed"],
+        )
     return ScenarioRun(
         scenario_id=scenario_id,
         request=req,
@@ -450,13 +484,9 @@ def run_scenario(
     _check_toggle(conn, body)
     _check_leftover(conn, body)
     goal_id = _resolve_goal(conn, body)
+    # ``start`` goes as sent: the simulator cache key normalises it to UTC
     req = SimRequest.model_validate(
-        {
-            **body.model_dump(exclude={"disable_skus"}),
-            "goal_id": goal_id,
-            # UTC so that the simulator cache key does not depend on the client's offset
-            "start": to_utc(body.start) if body.start else None,
-        }
+        {**body.model_dump(exclude={"disable_skus"}), "goal_id": goal_id}
     )
     events: list[RecommendationChanged] = []
     with _RUN_LOCK:
@@ -480,7 +510,7 @@ def run_scenario(
         scenario_id=out.scenario_id,
         request=ran,
         results=[result_out(r) for r in out.results],
-        recommendation=rec_out(conn, rec),
+        recommendation=_rec_state(conn, rec_out(conn, rec, what_if=out.what_if)),
         cache_hit=out.cache_hit,
         input_hash=out.input_hash,
         blocked=out.blocked,
@@ -509,18 +539,8 @@ def run_scenario(
 def get_scenario(scenario_id: str, conn: Conn, _user: Viewer) -> Envelope[ScenarioRun]:
     run = _RUNS.get(scenario_id) or load_run(conn, scenario_id)
     if run.recommendation is not None:
-        row = conn.execute(
-            "SELECT superseded_by FROM recommendations WHERE recommendation_id = ?",
-            [run.recommendation.recommendation_id],
-        ).fetchone()
-        sup = row[0] if row else None
         run = run.model_copy(
-            update={
-                "cache_hit": False,
-                "recommendation": run.recommendation.model_copy(
-                    update={"superseded_by": sup, "active": sup is None}
-                ),
-            }
+            update={"cache_hit": False, "recommendation": _rec_state(conn, run.recommendation)}
         )
     return Envelope[ScenarioRun](data=run, meta=run_meta(conn, run))
 
@@ -588,7 +608,7 @@ def list_recommendations(
         cond.append("r.campaign_id IN (SELECT campaign_id FROM campaign_skus WHERE sku_id = ?)")
         params.append(sku)
     if active:
-        cond.append("r.superseded_by IS NULL")
+        cond.append("r.superseded_by IS NULL AND NOT coalesce(r.what_if, FALSE)")
     if status:
         cond.append("r.status = ?")
         params.append(status)
@@ -596,7 +616,9 @@ def list_recommendations(
         conn, _REC_SQL + f" WHERE {' AND '.join(cond)} ORDER BY r.created_at DESC", params
     )
     page, nxt = paginate(rows, limit, cursor)
-    items = [rec_out(conn, rec_from_row(r, r["inputs_ref"])) for r in page]
+    items = [
+        rec_out(conn, rec_from_row(r, r["inputs_ref"]), what_if=bool(r["what_if"])) for r in page
+    ]
     as_of = data_as_of(conn)
     newest = max((i.inputs_ref.data_as_of for i in items if i.inputs_ref.data_as_of), default=None)
     return Page[RecommendationOut](
@@ -621,7 +643,7 @@ def get_recommendation(
     r = fetch_one(conn, _REC_SQL + " WHERE r.recommendation_id = ?", [recommendation_id])
     if r is None:
         raise NotFound(f"Không có đề xuất {recommendation_id}.", id=recommendation_id)
-    rec = rec_out(conn, rec_from_row(r, r["inputs_ref"]))
+    rec = rec_out(conn, rec_from_row(r, r["inputs_ref"]), what_if=bool(r["what_if"]))
     ref = rec.inputs_ref
     return Envelope[RecommendationOut](
         data=rec,

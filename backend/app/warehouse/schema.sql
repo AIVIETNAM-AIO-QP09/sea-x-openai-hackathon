@@ -358,7 +358,8 @@ CREATE TABLE IF NOT EXISTS scenarios (
   seed          BIGINT NOT NULL,
   requested_by  VARCHAR NOT NULL,          -- orchestrator|user|ai
   created_at    TIMESTAMPTZ NOT NULL,
-  input_hash    VARCHAR                    -- [DEV] 06 §3 cache key hash, compared by decisions (10 §2)
+  input_hash    VARCHAR,                   -- [DEV] 06 §3 cache key hash, compared by decisions (10 §2)
+  request       JSON                       -- [DEV] SimRequest as run (start/horizon resolved), echoed by GET /scenarios/{id}
 );
 
 CREATE TABLE IF NOT EXISTS scenario_results (
@@ -392,7 +393,8 @@ CREATE TABLE IF NOT EXISTS recommendations (
   reasons       VARCHAR[],
   superseded_by VARCHAR,                   -- newer recommendation (old rows are never deleted)
   created_at    TIMESTAMPTZ NOT NULL,
-  input_hash    VARCHAR                    -- [DEV] 06 §3
+  input_hash    VARCHAR,                   -- [DEV] 06 §3
+  what_if       BOOLEAN DEFAULT FALSE      -- [DEV] run with param_overrides / session_id / own actions: never active, never supersedes
 );
 
 -- ============================================================ 06 · orchestration
