@@ -1,11 +1,11 @@
 {
   "data": {
-    "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+    "scenario_id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
     "request": {
       "campaign_id": "CD002",
       "start": "2026-11-11T01:00:00+07:00",
       "horizon_hours": 23,
-      "goal_id": "goal-01M66S0S7208RH0Z7G6JA3DDVY",
+      "goal_id": "goal-01M67FC48PSYTFRR9D1C4FPD2F",
       "actions": null,
       "param_overrides": {},
       "samples": 1000,
@@ -169,16 +169,16 @@
         ],
         "violation_details": [],
         "objective": {
-          "mean": 1259434.56,
+          "mean": 1259432.76,
           "p10": 950800.0,
-          "p50": 1211200.0,
-          "p90": 1609364.0
+          "p50": 1211820.0,
+          "p90": 1608124.0
         },
         "contribution": {
-          "mean": 1259434.56,
+          "mean": 1259432.76,
           "p10": 950800.0,
-          "p50": 1211200.0,
-          "p90": 1609364.0
+          "p50": 1211820.0,
+          "p90": 1608124.0
         },
         "spend": {
           "mean": 0.0,
@@ -187,7 +187,7 @@
           "p90": 0.0
         },
         "leftover_units": {
-          "mean": 268.092,
+          "mean": 268.094,
           "p10": 249.0,
           "p50": 270.0,
           "p90": 285.0
@@ -199,7 +199,7 @@
           "p90": 0.0
         },
         "units_sold": {
-          "mean": 94.893,
+          "mean": 94.885,
           "p10": 81.0,
           "p50": 93.0,
           "p90": 113.0
@@ -219,13 +219,13 @@
               "p90": 27.0
             },
             "units_sold": {
-              "mean": 9.015,
+              "mean": 9.021,
               "p10": 2.0,
-              "p50": 7.0,
+              "p50": 7.5,
               "p90": 18.0
             },
             "lost_units": {
-              "mean": 5.985,
+              "mean": 5.979,
               "p10": 0.0,
               "p50": 4.0,
               "p90": 14.0
@@ -239,13 +239,13 @@
             "contribution_per_unit": 18600.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 21.456,
+              "mean": 21.451,
               "p10": 8.0,
               "p50": 18.0,
               "p90": 38.0
             },
             "units_sold": {
-              "mean": 21.456,
+              "mean": 21.451,
               "p10": 8.0,
               "p50": 18.0,
               "p90": 38.0
@@ -257,7 +257,7 @@
               "p90": 0.0
             },
             "leftover_units": {
-              "mean": 265.529,
+              "mean": 265.528,
               "p10": 247.0,
               "p50": 268.0,
               "p90": 281.0
@@ -270,28 +270,28 @@
             "contribution_per_unit": 9280.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 124.543,
+              "mean": 124.566,
               "p10": 53.0,
               "p50": 107.0,
-              "p90": 219.10000000000002
+              "p90": 220.10000000000002
             },
             "units_sold": {
-              "mean": 64.422,
+              "mean": 64.413,
               "p10": 50.0,
               "p50": 68.0,
               "p90": 74.0
             },
             "lost_units": {
-              "mean": 60.121,
+              "mean": 60.153,
               "p10": 0.0,
               "p50": 40.0,
-              "p90": 149.0
+              "p90": 149.10000000000002
             },
             "leftover_units": {
-              "mean": 2.563,
+              "mean": 2.566,
               "p10": 0.0,
               "p50": 0.0,
-              "p90": 11.0
+              "p90": 10.100000000000023
             },
             "stockout_hour_p50": "2026-11-11T18:00:00+07:00"
           }
@@ -313,25 +313,25 @@
         "violations": [],
         "violation_details": [],
         "objective": {
-          "mean": -2163690.1199999996,
-          "p10": -2562073.999999999,
-          "p50": -2229009.999999999,
-          "p90": -1686385.999999999
+          "mean": -2154410.4799999995,
+          "p10": -2553158.999999999,
+          "p50": -2218854.999999999,
+          "p90": -1676230.999999999
         },
         "contribution": {
-          "mean": 1468099.88,
-          "p10": 1069716.0,
+          "mean": 1467224.52,
+          "p10": 1068476.0,
           "p50": 1402780.0,
           "p90": 1945404.0
         },
         "spend": {
-          "mean": 3631789.9999999995,
-          "p10": 3631789.999999999,
-          "p50": 3631789.999999999,
-          "p90": 3631789.999999999
+          "mean": 3621634.9999999995,
+          "p10": 3621634.999999999,
+          "p50": 3621634.999999999,
+          "p90": 3621634.999999999
         },
         "leftover_units": {
-          "mean": 255.799,
+          "mean": 255.848,
           "p10": 230.0,
           "p50": 259.0,
           "p90": 277.0
@@ -343,7 +343,7 @@
           "p90": 0.0
         },
         "units_sold": {
-          "mean": 106.985,
+          "mean": 106.937,
           "p10": 88.9,
           "p50": 103.0,
           "p90": 130.10000000000002
@@ -357,19 +357,19 @@
             "contribution_per_unit": 29120.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 21.982,
+              "mean": 21.961,
               "p10": 8.0,
               "p50": 19.0,
               "p90": 39.0
             },
             "units_sold": {
-              "mean": 9.216,
+              "mean": 9.215,
               "p10": 2.0,
               "p50": 8.0,
               "p90": 19.0
             },
             "lost_units": {
-              "mean": 12.766,
+              "mean": 12.746,
               "p10": 2.0,
               "p50": 10.0,
               "p90": 26.0
@@ -383,13 +383,13 @@
             "contribution_per_unit": 18600.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 31.377,
+              "mean": 31.333,
               "p10": 13.0,
               "p50": 27.0,
               "p90": 55.0
             },
             "units_sold": {
-              "mean": 31.377,
+              "mean": 31.333,
               "p10": 13.0,
               "p50": 27.0,
               "p90": 55.0
@@ -401,7 +401,7 @@
               "p90": 0.0
             },
             "leftover_units": {
-              "mean": 255.407,
+              "mean": 255.452,
               "p10": 230.0,
               "p50": 259.0,
               "p90": 277.0
@@ -414,25 +414,25 @@
             "contribution_per_unit": 9280.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 182.327,
+              "mean": 182.136,
               "p10": 77.0,
               "p50": 157.0,
               "p90": 320.30000000000007
             },
             "units_sold": {
-              "mean": 66.392,
+              "mean": 66.389,
               "p10": 56.0,
               "p50": 68.0,
               "p90": 74.0
             },
             "lost_units": {
-              "mean": 115.935,
+              "mean": 115.747,
               "p10": 17.0,
               "p50": 89.0,
               "p90": 246.4000000000001
             },
             "leftover_units": {
-              "mean": 0.392,
+              "mean": 0.396,
               "p10": 0.0,
               "p50": 0.0,
               "p90": 0.0
@@ -457,25 +457,25 @@
         "violations": [],
         "violation_details": [],
         "objective": {
-          "mean": -1068824.92,
-          "p10": -1450990.0,
-          "p50": -1129210.0,
-          "p90": -621182.0
+          "mean": -1059832.4,
+          "p10": -1440835.0,
+          "p50": -1119055.0,
+          "p90": -611027.0
         },
         "contribution": {
-          "mean": 1444565.08,
+          "mean": 1443402.6,
           "p10": 1062400.0,
           "p50": 1384180.0,
           "p90": 1892208.0
         },
         "spend": {
-          "mean": 2513390.0,
-          "p10": 2513390.0,
-          "p50": 2513390.0,
-          "p90": 2513390.0
+          "mean": 2503235.0,
+          "p10": 2503235.0,
+          "p50": 2503235.0,
+          "p90": 2503235.0
         },
         "leftover_units": {
-          "mean": 257.122,
+          "mean": 257.185,
           "p10": 233.0,
           "p50": 260.0,
           "p90": 277.0
@@ -487,7 +487,7 @@
           "p90": 0.0
         },
         "units_sold": {
-          "mean": 105.646,
+          "mean": 105.583,
           "p10": 88.0,
           "p50": 102.0,
           "p90": 128.0
@@ -501,10 +501,10 @@
             "contribution_per_unit": 29120.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 21.148,
+              "mean": 21.102,
               "p10": 8.0,
               "p50": 19.0,
-              "p90": 37.0
+              "p90": 36.0
             },
             "units_sold": {
               "mean": 9.232,
@@ -513,7 +513,7 @@
               "p90": 19.0
             },
             "lost_units": {
-              "mean": 11.916,
+              "mean": 11.87,
               "p10": 2.0,
               "p50": 10.0,
               "p90": 24.0
@@ -527,13 +527,13 @@
             "contribution_per_unit": 18600.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 30.151,
+              "mean": 30.089,
               "p10": 12.0,
               "p50": 26.0,
               "p90": 52.10000000000002
             },
             "units_sold": {
-              "mean": 30.151,
+              "mean": 30.089,
               "p10": 12.0,
               "p50": 26.0,
               "p90": 52.10000000000002
@@ -545,7 +545,7 @@
               "p90": 0.0
             },
             "leftover_units": {
-              "mean": 256.617,
+              "mean": 256.679,
               "p10": 232.0,
               "p50": 260.0,
               "p90": 277.0
@@ -558,25 +558,25 @@
             "contribution_per_unit": 9280.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 175.205,
+              "mean": 174.902,
               "p10": 74.9,
-              "p50": 151.0,
+              "p50": 150.5,
               "p90": 308.20000000000005
             },
             "units_sold": {
-              "mean": 66.263,
+              "mean": 66.262,
               "p10": 55.0,
               "p50": 68.0,
               "p90": 74.0
             },
             "lost_units": {
-              "mean": 108.942,
+              "mean": 108.64,
               "p10": 14.0,
               "p50": 82.5,
-              "p90": 234.4000000000001
+              "p90": 234.30000000000007
             },
             "leftover_units": {
-              "mean": 0.505,
+              "mean": 0.506,
               "p10": 0.0,
               "p50": 0.0,
               "p90": 0.0
@@ -610,15 +610,15 @@
         "violations": [],
         "violation_details": [],
         "objective": {
-          "mean": 157182.44,
+          "mean": 157179.4,
           "p10": -189976.0,
-          "p50": 105268.0,
+          "p50": 108988.0,
           "p90": 550676.0
         },
         "contribution": {
-          "mean": 1337514.44,
+          "mean": 1337511.4,
           "p10": 990356.0,
-          "p50": 1285600.0,
+          "p50": 1289320.0,
           "p90": 1731008.0
         },
         "spend": {
@@ -628,7 +628,7 @@
           "p90": 1180332.0
         },
         "leftover_units": {
-          "mean": 263.269,
+          "mean": 263.271,
           "p10": 242.0,
           "p50": 266.0,
           "p90": 281.0
@@ -640,7 +640,7 @@
           "p90": 0.0
         },
         "units_sold": {
-          "mean": 99.608,
+          "mean": 99.601,
           "p10": 84.0,
           "p50": 97.0,
           "p90": 119.0
@@ -654,19 +654,19 @@
             "contribution_per_unit": 29120.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 17.417,
+              "mean": 17.416,
               "p10": 6.0,
               "p50": 15.0,
               "p90": 31.0
             },
             "units_sold": {
-              "mean": 9.123,
+              "mean": 9.128,
               "p10": 2.0,
               "p50": 7.0,
               "p90": 19.0
             },
             "lost_units": {
-              "mean": 8.294,
+              "mean": 8.288,
               "p10": 0.0,
               "p50": 6.0,
               "p90": 18.0
@@ -680,13 +680,13 @@
             "contribution_per_unit": 18600.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 24.909,
+              "mean": 24.905,
               "p10": 10.0,
               "p50": 22.0,
               "p90": 43.10000000000002
             },
             "units_sold": {
-              "mean": 24.909,
+              "mean": 24.905,
               "p10": 10.0,
               "p50": 22.0,
               "p90": 43.10000000000002
@@ -698,7 +698,7 @@
               "p90": 0.0
             },
             "leftover_units": {
-              "mean": 261.968,
+              "mean": 261.967,
               "p10": 241.0,
               "p50": 265.0,
               "p90": 280.0
@@ -711,25 +711,25 @@
             "contribution_per_unit": 9280.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 144.533,
-              "p10": 62.900000000000006,
-              "p50": 124.0,
-              "p90": 253.10000000000002
+              "mean": 144.551,
+              "p10": 62.0,
+              "p50": 123.0,
+              "p90": 254.0
             },
             "units_sold": {
-              "mean": 65.576,
-              "p10": 53.900000000000006,
+              "mean": 65.568,
+              "p10": 53.0,
               "p50": 68.0,
               "p90": 74.0
             },
             "lost_units": {
-              "mean": 78.957,
+              "mean": 78.983,
               "p10": 0.9000000000000057,
-              "p50": 56.5,
-              "p90": 179.10000000000002
+              "p50": 56.0,
+              "p90": 180.20000000000005
             },
             "leftover_units": {
-              "mean": 1.301,
+              "mean": 1.304,
               "p10": 0.0,
               "p50": 0.0,
               "p90": 0.0
@@ -756,16 +756,16 @@
         ],
         "violation_details": [],
         "objective": {
-          "mean": 1259434.56,
+          "mean": 1259432.76,
           "p10": 950800.0,
-          "p50": 1211200.0,
-          "p90": 1609364.0
+          "p50": 1211820.0,
+          "p90": 1608124.0
         },
         "contribution": {
-          "mean": 1259434.56,
+          "mean": 1259432.76,
           "p10": 950800.0,
-          "p50": 1211200.0,
-          "p90": 1609364.0
+          "p50": 1211820.0,
+          "p90": 1608124.0
         },
         "spend": {
           "mean": 0.0,
@@ -774,7 +774,7 @@
           "p90": 0.0
         },
         "leftover_units": {
-          "mean": 268.092,
+          "mean": 268.094,
           "p10": 249.0,
           "p50": 270.0,
           "p90": 285.0
@@ -786,7 +786,7 @@
           "p90": 0.0
         },
         "units_sold": {
-          "mean": 94.893,
+          "mean": 94.885,
           "p10": 81.0,
           "p50": 93.0,
           "p90": 113.0
@@ -806,13 +806,13 @@
               "p90": 27.0
             },
             "units_sold": {
-              "mean": 9.015,
+              "mean": 9.021,
               "p10": 2.0,
-              "p50": 7.0,
+              "p50": 7.5,
               "p90": 18.0
             },
             "lost_units": {
-              "mean": 5.985,
+              "mean": 5.979,
               "p10": 0.0,
               "p50": 4.0,
               "p90": 14.0
@@ -826,13 +826,13 @@
             "contribution_per_unit": 18600.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 21.456,
+              "mean": 21.451,
               "p10": 8.0,
               "p50": 18.0,
               "p90": 38.0
             },
             "units_sold": {
-              "mean": 21.456,
+              "mean": 21.451,
               "p10": 8.0,
               "p50": 18.0,
               "p90": 38.0
@@ -844,7 +844,7 @@
               "p90": 0.0
             },
             "leftover_units": {
-              "mean": 265.529,
+              "mean": 265.528,
               "p10": 247.0,
               "p50": 268.0,
               "p90": 281.0
@@ -857,28 +857,28 @@
             "contribution_per_unit": 9280.0,
             "leftover_value_per_unit": 0.0,
             "demand": {
-              "mean": 124.543,
+              "mean": 124.566,
               "p10": 53.0,
               "p50": 107.0,
-              "p90": 219.10000000000002
+              "p90": 220.10000000000002
             },
             "units_sold": {
-              "mean": 64.422,
+              "mean": 64.413,
               "p10": 50.0,
               "p50": 68.0,
               "p90": 74.0
             },
             "lost_units": {
-              "mean": 60.121,
+              "mean": 60.153,
               "p10": 0.0,
               "p50": 40.0,
-              "p90": 149.0
+              "p90": 149.10000000000002
             },
             "leftover_units": {
-              "mean": 2.563,
+              "mean": 2.566,
               "p10": 0.0,
               "p50": 0.0,
-              "p90": 11.0
+              "p90": 10.100000000000023
             },
             "stockout_hour_p50": "2026-11-11T18:00:00+07:00"
           }
@@ -892,7 +892,7 @@
       }
     ],
     "recommendation": {
-      "recommendation_id": "rec-01M66S103EFSEPVWF431A97S0Z",
+      "recommendation_id": "rec-01M67FCMEZT0859NR57714PME4",
       "campaign_id": "CD002",
       "status": "recommend",
       "best": {
@@ -915,7 +915,7 @@
         "windows_local": null
       },
       "p_best_beats_runner_up": 1.0,
-      "expected_gain_vnd": 1226007,
+      "expected_gain_vnd": 1217012,
       "zone_bar": {
         "axis_label": "Lượng bán mỗi giờ nếu pause (sp)",
         "threshold": 0.0,
@@ -951,10 +951,10 @@
       "flip_conditions": [
         {
           "factor": "leftover_value_per_unit",
-          "flip_at": -199448.0,
+          "flip_at": -199969.0,
           "base_value": 0.0,
           "unit": "đ/sp",
-          "text": "Nếu hàng dư còn giá trị (ròng, so với giá vốn) từ -199.448đ/sp trở xuống → Giảm ngân sách 50% tốt hơn"
+          "text": "Nếu hàng dư còn giá trị (ròng, so với giá vốn) từ -199.969đ/sp trở xuống → Giảm ngân sách 50% tốt hơn"
         }
       ],
       "confidence": "reference",
@@ -962,17 +962,17 @@
         "Hàng NOICHIEN2L sẽ hết khoảng 14:00 11/11 (nhu cầu ~162 sp, tồn 76 sp): ads không bán thêm được khi hết hàng",
         "Ở giá 11.11 (531.000đ) mỗi sp NOICHIEN2L lãi 9.280đ; ads chỉ có lời khi iROAS ≥ 57.2",
         "Không được tắt hẳn vì đã cam kết với sàn trong khung flash sale",
-        "Chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 lợi hơn Giảm ngân sách 50% khoảng 1.226.007đ (xác suất 100%)",
+        "Chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 lợi hơn Giảm ngân sách 50% khoảng 1.217.012đ (xác suất 100%)",
         "Tạm dừng bị cấm vì đã cam kết với sàn trong khung flash sale. Về tiền, tạm dừng lợi hơn chạy tiếp: thanh cho thấy cái giá của ràng buộc, không phải đề xuất tạm dừng",
         "Dự báo nhu cầu ở mức 'reference'"
       ],
       "inputs_ref": {
         "forecast_ids": [
-          "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
-          "fc-01M66S0ZYKC9XRTB74PVJQCC8M",
-          "fc-01M66S0ZZGXBJCVC5JM0X60XS5"
+          "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
+          "fc-01M67FCM69PEGYRHXTXJQ15AA8",
+          "fc-01M67FCM78RHBVAH2GAWP5GM8Y"
         ],
-        "estimate_id": "iroas-01M66S0N028TG2A5D1C01HCJED",
+        "estimate_id": "iroas-01M67F7GW91MS4QEEYPASQCWS2",
         "param_version": {
           "decision_min_gain_vnd": 0,
           "decision_min_prob": 0,
@@ -988,12 +988,12 @@
           "sell_target_prob": 0,
           "stockout_penalty_per_unit": 0
         },
-        "goal_id": "goal-01M66S0S7208RH0Z7G6JA3DDVY",
+        "goal_id": "goal-01M67FC48PSYTFRR9D1C4FPD2F",
         "data_as_of": "2026-11-11T01:00:00+07:00",
-        "panel_version": "ib-01M66RXGV1CCPHKDJVQ6BYNC6R",
+        "panel_version": "ib-01M67F32DZ1CTGBBE2X5TR522B",
         "iroas_source": "estimate"
       },
-      "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+      "scenario_id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
       "created_at": "2026-11-11T01:00:00+07:00",
       "superseded_by": null,
       "runner_up_meets_goal": true,
@@ -1002,7 +1002,7 @@
       "runner_up_label": "Giảm ngân sách 50%",
       "reason_sources": [
         {
-          "id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+          "id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
           "kind": "forecast",
           "label": "Dự báo nhu cầu NOICHIEN2L",
           "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -1026,12 +1026,12 @@
           "href": "/api/v1/campaigns/CD002"
         },
         {
-          "id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+          "id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
           "kind": "scenario",
           "label": "Kết quả mô phỏng các lựa chọn",
           "data_as_of": "2026-11-11T01:00:00+07:00",
           "tool": "run_scenario",
-          "href": "/api/v1/scenarios/scn-01M66S107CAVQ7YJT23MT4XRSN"
+          "href": "/api/v1/scenarios/scn-01M67FCMQJZT5V7Q3T9CWN1YA6"
         },
         {
           "id": "commit-CD002",
@@ -1042,7 +1042,7 @@
           "href": "/api/v1/campaigns/CD002"
         },
         {
-          "id": "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
+          "id": "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
           "kind": "forecast",
           "label": "Dự báo nhu cầu",
           "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -1054,7 +1054,7 @@
       "what_if": false
     },
     "cache_hit": false,
-    "input_hash": "b5c48d9f6c64a79c07ee19ee4303462a",
+    "input_hash": "f84b6663cd3c382e4b159ef899b32da6",
     "blocked": false,
     "timings_ms": {},
     "requested_by": "orchestrator",
@@ -1067,15 +1067,15 @@
     "confidence": "reference",
     "sources": [
       {
-        "id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+        "id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
         "kind": "scenario",
         "label": "Mô phỏng các lựa chọn",
         "data_as_of": "2026-11-11T01:00:00+07:00",
         "tool": "run_scenario",
-        "href": "/api/v1/scenarios/scn-01M66S107CAVQ7YJT23MT4XRSN"
+        "href": "/api/v1/scenarios/scn-01M67FCMQJZT5V7Q3T9CWN1YA6"
       },
       {
-        "id": "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
+        "id": "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
         "kind": "forecast",
         "label": "Dự báo COMBO-NOICHIEN",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -1083,7 +1083,7 @@
         "href": "/api/v1/skus/COMBO-NOICHIEN/forecast"
       },
       {
-        "id": "fc-01M66S0ZYKC9XRTB74PVJQCC8M",
+        "id": "fc-01M67FCM69PEGYRHXTXJQ15AA8",
         "kind": "forecast",
         "label": "Dự báo GIAYLOT50",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -1091,7 +1091,7 @@
         "href": "/api/v1/skus/GIAYLOT50/forecast"
       },
       {
-        "id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+        "id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
         "kind": "forecast",
         "label": "Dự báo NOICHIEN2L",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -1099,7 +1099,7 @@
         "href": "/api/v1/skus/NOICHIEN2L/forecast"
       },
       {
-        "id": "iroas-01M66S0N028TG2A5D1C01HCJED",
+        "id": "iroas-01M67F7GW91MS4QEEYPASQCWS2",
         "kind": "iroas",
         "label": "Ước lượng iROAS CD002",
         "data_as_of": null,

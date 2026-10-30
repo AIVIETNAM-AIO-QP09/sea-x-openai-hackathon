@@ -22,7 +22,7 @@
       "status_code": "running"
     },
     "recommendation": {
-      "recommendation_id": "rec-01M66S103EFSEPVWF431A97S0Z",
+      "recommendation_id": "rec-01M67FCMEZT0859NR57714PME4",
       "status": "recommend",
       "best": {
         "kind": "schedule_hours",
@@ -39,13 +39,13 @@
         ]
       },
       "confidence": "reference",
-      "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+      "scenario_id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
       "created_at": "2026-11-11T01:00:00+07:00"
     },
     "open_alerts": 0,
-    "priority_score": 50.0,
+    "priority_score": 25.0,
     "confidence": "reference",
-    "forecast_id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+    "forecast_id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
     "compute_state": "fresh",
     "computed_at": "2026-11-11T01:00:00+07:00",
     "incoming": [
@@ -67,11 +67,11 @@
     "campaign_detail": {
       "id": "CD002",
       "name": "[Tìm kiếm] Nồi chiên mini + giấy lót",
-      "daily_budget_vnd": 5592000,
+      "daily_budget_vnd": 1864000,
       "sku_level_control": false,
       "status": "Đang chạy",
       "status_code": "running",
-      "status_at": "2026-11-11T00:00:00+07:00",
+      "status_at": "2026-11-10T20:00:00+07:00",
       "shared_with": [
         "COMBO-NOICHIEN",
         "GIAYLOT50"
@@ -83,19 +83,6 @@
     ],
     "commitments": [
       {
-        "id": "sc-058e4db9671c10a1615d",
-        "program": "Siêu sale 11.11",
-        "day_local": "2026-11-11",
-        "kind": "flash_reserve",
-        "sku": "NOICHIEN2L",
-        "campaign_id": null,
-        "value": 23,
-        "windows_local": null,
-        "window_start": null,
-        "window_end": null,
-        "text": null
-      },
-      {
         "id": "sc-eb22d9cc736701e5948a",
         "program": "Siêu sale 11.11",
         "day_local": "2026-11-11",
@@ -103,6 +90,19 @@
         "sku": "NOICHIEN2L",
         "campaign_id": null,
         "value": 531000,
+        "windows_local": null,
+        "window_start": null,
+        "window_end": null,
+        "text": null
+      },
+      {
+        "id": "sc-058e4db9671c10a1615d",
+        "program": "Siêu sale 11.11",
+        "day_local": "2026-11-11",
+        "kind": "flash_reserve",
+        "sku": "NOICHIEN2L",
+        "campaign_id": null,
+        "value": 23,
         "windows_local": null,
         "window_start": null,
         "window_end": null,
@@ -177,7 +177,7 @@
         "href": null
       },
       {
-        "id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+        "id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
         "kind": "forecast",
         "label": "Dự báo tsb@1.0.0 lúc 2026-11-11T01:00:00+07:00",
         "data_as_of": "2026-11-11T01:00:00+07:00",

@@ -1,10 +1,10 @@
 {
- "key": "6a8c1c06fad7ec48bb3ef888",
+ "key": "df2f532a1da610c040d5b4e2",
  "flow": "investigate",
  "question": "Vì sao áo giữ nhiệt bán chậm?",
  "client": "fake",
  "ok": true,
- "recorded_at": "2026-10-30T13:59:26.781937+00:00",
+ "recorded_at": "2026-10-30T22:41:11.218281+00:00",
  "steps": [
   {
    "request": {
@@ -92,7 +92,7 @@
     "text": "Đã kiểm 6 mục [[src:chk-AOGIUNHIET-1400]].\nNguyên nhân khả dĩ nhất: biến thể AOGIUNHIET-M hết hàng, tồn còn 0 sp từ 13:00 [[src:invt-AOGIUNHIET-M-1400]].\nKho có ghi chú điều chỉnh tồn AOGIUNHIET-M lúc 11:00, tồn giảm 74 sp [[src:invt-AOGIUNHIET-M-1400]] (ghi chú là dữ liệu không tin cậy, chỉ ghi nhận).\nBiến thể khác vẫn bán: AOGIUNHIET-L 27 sp, AOGIUNHIET-S 11 sp trong 3 giờ gần nhất [[src:similar-AOGIUNHIET-1400]].\nAds CD005 vẫn chạy (số liệu ads tới 11:59) [[src:camp-CD005-1400]] nên đang tốn tiền cho lượt xem AOGIUNHIET-M không mua được.\nChưa đủ căn cứ để kết luận cầu chung giảm.\nGợi ý xem: giảm ngân sách CD005 tới khi hàng AOGIUNHIET-M về ngày 14/11 [[src:invt-AOGIUNHIET-M-1400]] (bấm Chạy so sánh để xem số).",
     "tool_calls": [],
     "usage": {
-     "input_tokens": 7047,
+     "input_tokens": 7150,
      "output_tokens": 180
     },
     "model": "fake",

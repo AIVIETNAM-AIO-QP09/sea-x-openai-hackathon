@@ -118,6 +118,8 @@ def main() -> None:
     from app.warehouse import repo
     from app.warehouse.db import Database
 
+    # ASCII only: stdout may be a cp1252 pipe (scripts/demo.mjs on Windows)
+    print(f"[demo_import] loading history + 11.11 up to {until.isoformat()}...", flush=True)
     database = Database(output / "demo.duckdb")
     database.migrate()
     repo.seed_bundles(database.write)
@@ -149,12 +151,17 @@ def main() -> None:
     if commands:
         import subprocess
         import sys
+        import time
 
-        for command in commands:
+        for i, command in enumerate(commands, 1):
+            # progress line for scripts/demo.mjs (backtest is the slow one: minutes); ASCII only
+            print(f"[demo_import] step {i}/{len(commands)}: {command}...", flush=True)
+            t0 = time.perf_counter()
             subprocess.run(
                 [sys.executable, "-m", "app.cli", command, "--db", str(output / "demo.duckdb")],
                 check=True,
             )
+            print(f"[demo_import] done {command} in {time.perf_counter() - t0:.0f} s", flush=True)
     print(f"Imported at {until.isoformat()}; report: {output / 'import-report.json'}")
     if args.serve:
         import uvicorn

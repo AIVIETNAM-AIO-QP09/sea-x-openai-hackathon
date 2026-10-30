@@ -50,7 +50,8 @@ describe('App shell + Shift overview (fixture mode)', () => {
   it('shows data clock and open alert count in the top bar', async () => {
     renderAt('/');
     expect(await screen.findByText('Dữ liệu tới 01:00')).toBeInTheDocument();
-    expect(await screen.findByText('Cảnh báo 1')).toBeInTheDocument();
+    // snapshot of the demo DB at 01:00: missing cost (21 SKU) + ads data 240 min late
+    expect(await screen.findByText('Cảnh báo 2')).toBeInTheDocument();
   });
 
   it('SKU table: 50 rows in the bundle, real total 300', async () => {

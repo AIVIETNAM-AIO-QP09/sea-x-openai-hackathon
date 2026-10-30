@@ -1,10 +1,10 @@
 {
- "key": "510184b52aacd3ca85ebf8f4",
+ "key": "1a45f61a1e2834f9fd43f63e",
  "flow": "whatif",
  "question": "Nếu sếp giao chỉ tiêu 97 cái hôm nay thì sao?",
  "client": "fake",
  "ok": true,
- "recorded_at": "2026-10-30T13:59:25.614508+00:00",
+ "recorded_at": "2026-10-30T22:41:10.711472+00:00",
  "steps": [
   {
    "request": {
@@ -66,7 +66,7 @@
     "sources": [
      [
       "compare_actions",
-      "scn-01M66HQC2K642CDF8Y3D31SVQW"
+      "scn-01M67FJRB6W9J517VJD0386X79"
      ]
     ]
    },
@@ -80,7 +80,7 @@
      }
     ],
     "usage": {
-     "input_tokens": 2356,
+     "input_tokens": 2365,
      "output_tokens": 20
     },
     "model": "fake",
@@ -109,20 +109,20 @@
     "sources": [
      [
       "compare_actions",
-      "scn-01M66HQC2K642CDF8Y3D31SVQW"
+      "scn-01M67FJRB6W9J517VJD0386X79"
      ],
      [
       "run_scenario",
-      "scn-01M66HQD48J2QQFXA5XCXJNPX1"
+      "scn-01M67FJRGR55X9VHGH1RKC2AYR"
      ]
     ]
    },
    "response": {
-    "text": "Hiện tại đề xuất là chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 [[src:scn-01M66HQC2K642CDF8Y3D31SVQW]]. Theo kịch bản giả định chỉ tiêu 97 cái, nên giảm ngân sách 30% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]]: xác suất bán đủ 81% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]], còn chỉ chạy khung giờ chỉ đạt 57% [[src:scn-01M66HQD48J2QQFXA5XCXJNPX1]]. Đây là giả định chưa xảy ra, mức tin cậy kịch bản.",
+    "text": "Hiện tại đề xuất là chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 [[src:scn-01M67FJRB6W9J517VJD0386X79]]. Với chỉ tiêu 97 cái hôm nay, không phương án nào đạt chắc 80% [[src:scn-01M67FJRGR55X9VHGH1RKC2AYR]]. Khả năng cao nhất là chạy tiếp: xác suất bán đủ 70% [[src:scn-01M67FJRGR55X9VHGH1RKC2AYR]], còn chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 chỉ đạt 50% [[src:scn-01M67FJRGR55X9VHGH1RKC2AYR]]. Cái giá: chạy tiếp lời kém chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 khoảng 3,97 triệu đồng [[src:scn-01M67FJRGR55X9VHGH1RKC2AYR]]. Nên hạ chỉ tiêu, hoặc chấp nhận rủi ro không đạt và cái giá đó. Đây là giả định chưa xảy ra, mức tin cậy kịch bản.",
     "tool_calls": [],
     "usage": {
-     "input_tokens": 3931,
-     "output_tokens": 99
+     "input_tokens": 3791,
+     "output_tokens": 165
     },
     "model": "fake",
     "output_items": null

@@ -40,7 +40,7 @@ from app.core.ids import new_id
 from app.core.timeutil import local_date, local_day_bounds_utc
 from app.economics.breakeven import BreakevenRequest, uniform_breakeven
 from app.economics.goals import GOAL_LABEL_VI, Goal, active_goal
-from app.economics.parameters import parse_overrides
+from app.economics.parameters import load_param_set, parse_overrides
 from app.simulator.locks import simulation_locks
 from app.simulator.schemas import ActionSpec, Dist, SimOutput, SimRequest
 from app.simulator.service import run_simulation
@@ -175,6 +175,18 @@ def simulate(
         "kind": goal.kind,
         "label": GOAL_LABEL_VI.get(goal.kind, goal.kind),
         "target_units": goal.target_units,
+        # the probability a sell_target must reach (goal param, else the parameter store):
+        # a structured value, so an answer may say "chắc 80%" (only goal_note had it, as text)
+        "sell_target_prob": (
+            float(
+                goal.params.get(
+                    "sell_target_prob",
+                    load_param_set(ctx.conn, campaign_id=campaign_id).num("sell_target_prob"),
+                )
+            )
+            if goal.kind == "sell_target"
+            else None
+        ),
         "deadline": iso(goal.deadline),
         "hypothetical": hypothetical,
         "goal_id": None if hypothetical else goal.goal_id,

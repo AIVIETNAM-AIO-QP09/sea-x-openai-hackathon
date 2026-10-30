@@ -163,10 +163,10 @@ uv run python -m app.cli fit
 uv run python -m app.cli estimate-ads
 ```
 
-Chuẩn bị demo pitch bằng **một lệnh** (dựng DB mới tới 01:00 ngày 11.11, đặt mục tiêu CD002, làm nóng màn So sánh, bật backend với AI replay + web), xem [runbook](docs/demo/runbook.md):
+Chuẩn bị demo pitch bằng **một lệnh** (dựng DB **đầy đủ** mới tới 01:00 ngày 11.11: backtest + fit + iROAS, ~3–5 phút, giống hệ thống đo số pitch; đặt mục tiêu CD002, làm nóng màn So sánh, bật backend với AI replay + web), xem [runbook](docs/demo/runbook.md):
 
 ```powershell
-node scripts/demo.mjs                                   # hoặc --db <file .duckdb có sẵn>, --api-port/--web-port
+node scripts/demo.mjs                                   # hoặc --db <file .duckdb có sẵn>, --api-port/--web-port; --light = bản nhẹ, số khác pitch
 node scripts/demo.mjs jump 13                           # nhảy dữ liệu tới 13:59; home = về 01:00
 cd backend; uv run python -m eval.rehearsal --base-url http://localhost:8000   # diễn tập 2 lượt, ĐẠT/LỖI từng cảnh
 ```

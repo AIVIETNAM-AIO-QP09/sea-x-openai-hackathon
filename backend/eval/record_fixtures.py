@@ -3,18 +3,19 @@
 M5, mục "Fixtures từ API thật" trong docs/quyet-dinh/M5-chuan-bi-demo.md.
 
 Trang công khai chạy ``web/`` ở chế độ fixtures (``VITE_USE_FIXTURES=true``). Script này dựng
-DB demo tạm tới 01:00 ngày 11.11 (``app.demo_import --models``, như runbook mục 1.1), lead
+DB demo tạm tới 01:00 ngày 11.11 giống hệt ``scripts/demo.mjs`` mặc định
+(``app.demo_import --replay-hour 0 --models``: qua thư mục phát lại, backtest + fit + iROAS), lead
 đặt mục tiêu profit cho CD002, chạy mô phỏng đầu tiên giống nút trên màn So sánh, rồi gọi
 đúng các GET mà web gọi ở chế độ API thật qua ``TestClient`` và ghi response ``{data, meta}``
 thành file fixture (tên theo ``FIXTURE_ROUTES`` / quy ước ``<loại>-<id>.json`` trong
 ``web/src/api/client.ts``).
 
     cd backend
-    uv run python -m eval.record_fixtures --out ../web/src/api/fixtures            # ~5–10 phút
+    uv run python -m eval.record_fixtures --out ../web/src/api/fixtures            # ~4–10 phút
     uv run python -m eval.record_fixtures --out ../web/src/api/fixtures --db PATH  # DB có sẵn
 
-``--db``: DB demo tới 01:00 đã chạy ``--models`` (ví dụ ``data/pitch-0100/demo.duckdb``). Script
-chép sang thư mục tạm, không ghi vào file gốc. DB tạm xóa khi xong.
+``--db``: DB demo 01:00 đầy đủ của ``scripts/demo.mjs`` (``data/pitch-<thời gian>/demo.duckdb``).
+Script chép sang thư mục tạm, không ghi vào file gốc. DB tạm xóa khi xong.
 
 Danh sách SKU giữ ``SKU_ROWS`` dòng ưu tiên cao nhất (bundle nhẹ) nhưng ``meta.total`` vẫn là
 tổng thật. Ví dụ minh họa (``*-rec-540``, ``*-rec-510``, ``*-scn-2280``, ``*-scn-2210``) không
@@ -75,7 +76,7 @@ def build_db(tmp: Path, reuse: Path | None) -> Path:
         return path
     out = tmp / "import"
     cmd = [sys.executable, "-m", "app.demo_import", "--shop", str(SHOP), "--output", str(out)]
-    subprocess.run([*cmd, "--until", CLOCK, "--models"], cwd=BACKEND, check=True)
+    subprocess.run([*cmd, "--replay-hour", "0", "--models"], cwd=BACKEND, check=True)
     return out / "demo.duckdb"
 
 
@@ -182,7 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     written: list[Path] = []
     for name, body in bodies.items():
         f = args.out / f"{name}.json"
-        f.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        text = json.dumps(body, ensure_ascii=False, indent=2) + "\n"
+        f.write_text(text, encoding="utf-8", newline="\n")  # LF như trong repo
         written.append(f)
         show(f"ghi {f.name} ({f.stat().st_size:,} byte)")
     hits = scan_pii(written)

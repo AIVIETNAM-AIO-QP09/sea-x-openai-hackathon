@@ -1,6 +1,6 @@
 {
   "data": {
-    "recommendation_id": "rec-01M66S103EFSEPVWF431A97S0Z",
+    "recommendation_id": "rec-01M67FCMEZT0859NR57714PME4",
     "campaign_id": "CD002",
     "status": "recommend",
     "best": {
@@ -23,7 +23,7 @@
       "windows_local": null
     },
     "p_best_beats_runner_up": 1.0,
-    "expected_gain_vnd": 1226007,
+    "expected_gain_vnd": 1217012,
     "zone_bar": {
       "axis_label": "Lượng bán mỗi giờ nếu pause (sp)",
       "threshold": 0.0,
@@ -59,10 +59,10 @@
     "flip_conditions": [
       {
         "factor": "leftover_value_per_unit",
-        "flip_at": -199448.0,
+        "flip_at": -199969.0,
         "base_value": 0.0,
         "unit": "đ/sp",
-        "text": "Nếu hàng dư còn giá trị (ròng, so với giá vốn) từ -199.448đ/sp trở xuống → Giảm ngân sách 50% tốt hơn"
+        "text": "Nếu hàng dư còn giá trị (ròng, so với giá vốn) từ -199.969đ/sp trở xuống → Giảm ngân sách 50% tốt hơn"
       }
     ],
     "confidence": "reference",
@@ -70,17 +70,17 @@
       "Hàng NOICHIEN2L sẽ hết khoảng 14:00 11/11 (nhu cầu ~162 sp, tồn 76 sp): ads không bán thêm được khi hết hàng",
       "Ở giá 11.11 (531.000đ) mỗi sp NOICHIEN2L lãi 9.280đ; ads chỉ có lời khi iROAS ≥ 57.2",
       "Không được tắt hẳn vì đã cam kết với sàn trong khung flash sale",
-      "Chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 lợi hơn Giảm ngân sách 50% khoảng 1.226.007đ (xác suất 100%)",
+      "Chỉ chạy theo khung giờ 00:00–02:00, 12:00–14:00 lợi hơn Giảm ngân sách 50% khoảng 1.217.012đ (xác suất 100%)",
       "Tạm dừng bị cấm vì đã cam kết với sàn trong khung flash sale. Về tiền, tạm dừng lợi hơn chạy tiếp: thanh cho thấy cái giá của ràng buộc, không phải đề xuất tạm dừng",
       "Dự báo nhu cầu ở mức 'reference'"
     ],
     "inputs_ref": {
       "forecast_ids": [
-        "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
-        "fc-01M66S0ZYKC9XRTB74PVJQCC8M",
-        "fc-01M66S0ZZGXBJCVC5JM0X60XS5"
+        "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
+        "fc-01M67FCM69PEGYRHXTXJQ15AA8",
+        "fc-01M67FCM78RHBVAH2GAWP5GM8Y"
       ],
-      "estimate_id": "iroas-01M66S0N028TG2A5D1C01HCJED",
+      "estimate_id": "iroas-01M67F7GW91MS4QEEYPASQCWS2",
       "param_version": {
         "decision_min_gain_vnd": 0,
         "decision_min_prob": 0,
@@ -96,12 +96,12 @@
         "sell_target_prob": 0,
         "stockout_penalty_per_unit": 0
       },
-      "goal_id": "goal-01M66S0S7208RH0Z7G6JA3DDVY",
+      "goal_id": "goal-01M67FC48PSYTFRR9D1C4FPD2F",
       "data_as_of": "2026-11-11T01:00:00+07:00",
-      "panel_version": "ib-01M66RXGV1CCPHKDJVQ6BYNC6R",
+      "panel_version": "ib-01M67F32DZ1CTGBBE2X5TR522B",
       "iroas_source": "estimate"
     },
-    "scenario_id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+    "scenario_id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
     "created_at": "2026-11-11T01:00:00+07:00",
     "superseded_by": null,
     "runner_up_meets_goal": true,
@@ -110,7 +110,7 @@
     "runner_up_label": "Giảm ngân sách 50%",
     "reason_sources": [
       {
-        "id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+        "id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
         "kind": "forecast",
         "label": "Dự báo nhu cầu NOICHIEN2L",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -134,12 +134,12 @@
         "href": "/api/v1/campaigns/CD002"
       },
       {
-        "id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+        "id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
         "kind": "scenario",
         "label": "Kết quả mô phỏng các lựa chọn",
         "data_as_of": "2026-11-11T01:00:00+07:00",
         "tool": "run_scenario",
-        "href": "/api/v1/scenarios/scn-01M66S107CAVQ7YJT23MT4XRSN"
+        "href": "/api/v1/scenarios/scn-01M67FCMQJZT5V7Q3T9CWN1YA6"
       },
       {
         "id": "commit-CD002",
@@ -150,7 +150,7 @@
         "href": "/api/v1/campaigns/CD002"
       },
       {
-        "id": "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
+        "id": "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
         "kind": "forecast",
         "label": "Dự báo nhu cầu",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -168,7 +168,7 @@
     "confidence": "reference",
     "sources": [
       {
-        "id": "fc-01M66S0ZZGXBJCVC5JM0X60XS5",
+        "id": "fc-01M67FCM78RHBVAH2GAWP5GM8Y",
         "kind": "forecast",
         "label": "Dự báo nhu cầu NOICHIEN2L",
         "data_as_of": "2026-11-11T01:00:00+07:00",
@@ -192,12 +192,12 @@
         "href": "/api/v1/campaigns/CD002"
       },
       {
-        "id": "scn-01M66S107CAVQ7YJT23MT4XRSN",
+        "id": "scn-01M67FCMQJZT5V7Q3T9CWN1YA6",
         "kind": "scenario",
         "label": "Kết quả mô phỏng các lựa chọn",
         "data_as_of": "2026-11-11T01:00:00+07:00",
         "tool": "run_scenario",
-        "href": "/api/v1/scenarios/scn-01M66S107CAVQ7YJT23MT4XRSN"
+        "href": "/api/v1/scenarios/scn-01M67FCMQJZT5V7Q3T9CWN1YA6"
       },
       {
         "id": "commit-CD002",
@@ -208,7 +208,7 @@
         "href": "/api/v1/campaigns/CD002"
       },
       {
-        "id": "fc-01M66S0ZYHPD0K46BMPVKW2AY6",
+        "id": "fc-01M67FCM5D7G2FVH4D30XVQ2WM",
         "kind": "forecast",
         "label": "Dự báo nhu cầu",
         "data_as_of": "2026-11-11T01:00:00+07:00",
