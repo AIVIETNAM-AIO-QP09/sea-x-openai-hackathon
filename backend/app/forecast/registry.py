@@ -187,7 +187,8 @@ def write_scores(
         conn.execute(
             "INSERT INTO model_scores (score_id, model_id, backtest, demand_group, context, n_skus,"
             " n_sku_days, wape, bias, pinball_10, pinball_50, pinball_90, coverage, is_champion,"
-            " panel_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " panel_version, created_at, wape_floor)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 new_id("sc"),
                 r.model_id,
@@ -205,6 +206,7 @@ def write_scores(
                 r.is_champion,
                 panel_version,
                 ts,
+                r.wape_floor,
             ],
         )
         n += 1
@@ -230,6 +232,7 @@ def _row(d: dict[str, object]) -> ScoreRow:
         pinball_90=f("pinball_90"),
         coverage=f("coverage"),
         is_champion=bool(d["is_champion"]),
+        wape_floor=f("wape_floor"),
     )
 
 

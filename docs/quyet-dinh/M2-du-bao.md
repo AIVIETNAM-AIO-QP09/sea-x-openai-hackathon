@@ -55,6 +55,36 @@ Dùng chung `nb_quantiles` (k của nhóm) thay cho hỗn hợp Bernoulli × Poi
 ### C12. Nguồn dữ liệu test / eval
 Fixture tạm `mock_loader.py` đã bị agent M1 xóa; test dùng `tests.mockdata.load_mock` (pipeline thật) và `loaded_db` dùng chung cho test chỉ đọc. Test cần ghi và cần ngày 11.11 dựng DB riêng (`nho_live`, `demo_live` = lịch sử + `ingest_live_delta` cả ngày 11.11). `eval_forecast.py` nhận `--db` (DuckDB do pipeline dựng) hoặc tự nạp mock vào bộ nhớ qua `tests.mockdata`.
 
+## D. Đo lại cho đúng: coverage PIT + WAPE so với mức sai không tránh được (user chọn "hướng A")
+
+**Vấn đề.** Hai ngưỡng của nhãn tin cậy cho sai kết luận trên mock: (1) coverage `y ∈ [p10, p90]` của số đếm nhỏ tính trọn khối xác suất ở hai mép, nên dự báo bằng **phân phối thật** cũng phủ 86–91% (> 0,88); (2) "WAPE ≤ 30%" thấp hơn nhiễu không tránh được (dự báo bằng λ thật: 35% ngày thường trên `demo`). Kết quả cũ: hầu như không SKU nào `verified` dù model gần sàn nhiễu.
+
+**Cách đo mới** (`metrics.py`, `labels.py`, 03 §7.2–7.3):
+- Coverage = tỷ lệ (SKU, ngày) có PIT ngẫu nhiên hóa `u = F(y−1) + V·(F(y) − F(y−1))`, `V ~ U(0,1)` (seed theo SKU/mốc/model) nằm trong `[0,1; 0,9]`; `F` = phân phối mẫu của tổng ngày (giờ còn hàng trong app). Phân phối đúng → đúng 80%.
+- `WAPE_floor = Σ E|Y − p50_Y| / Σ E[Y]`, `Y` = tổng ngày của NegBin(mean dự báo, k) theo giờ, Monte Carlo 500 mẫu có seed, cùng tập SKU-ngày (≥ 1 sp/ngày) với WAPE. Lưu ở `model_scores.wape_floor`.
+- `verified` khi `WAPE ≤ (1 + WAPE_FLOOR_TOL)·WAPE_floor` (`WAPE_FLOOR_TOL = 0,10`, xem đoạn "Chốt" bên dưới), coverage PIT ∈ [0,72; 0,88], `n_sku_days ≥ 30`; drift → tối đa `reference`; < 14 ngày → `scenario` (giữ nguyên).
+- **Floor không gồm `level_sigma`** (lệch với gợi ý "mean + k + level_sigma"). Lý do bằng phép thử: tính có `level_sigma` thì floor của app 39% (ngày thường) và 42% (10.10) so với WAPE oracle 29% và 20%; floor đo độ mơ hồ của chính model, và dự báo ×1,5 *qua được* 10.10. Bỏ `level_sigma` thì floor = nhiễu đếm quanh mean của model: khớp oracle và dự báo kém trượt. Mở rộng khoảng cũng không giúp: floor không đổi mà coverage PIT vượt 0,88.
+
+**Phép thử oracle** (`eval_forecast.new_measure`, SKU ≥ 1 sp/ngày; unit test tổng hợp có seed ở `test_pure.py`). `demo`:
+
+| Phạm vi | Dự báo | WAPE | WAPE_floor | WAPE/floor | PIT | cũ [p10,p90] | Đạt |
+|---|---|---|---|---|---|---|---|
+| normal_roll on_dinh | oracle (λ thật, k=3) | 34,9% | 34,1% | 1,02 | 79,8% | 89,0% | ✓ |
+| | champion | 37,2% | 34,7% | 1,07 | 84,5% | 92,1% | ✓ |
+| | champion ×1,5 | 53,2% | 29,2% | 1,82 | 78,0% | 87,3% | ✗ |
+| | baseline 7 ngày cùng giờ | 39,4% | 34,8% | 1,13 | 74,8% | 84,5% | **✓** |
+| dd_1010 on_dinh+mua_vu | oracle | 25,7% | 24,5% | 1,05 | 79,1% | 86,1% | ✓ |
+| | champion | 34,9% | 24,4% | 1,43 | 85,9% | 89,7% | ✗ |
+| | champion ×1,5 / baseline | 56,7% / 67,1% | | 2,73 / 1,88 | | | ✗ / ✗ |
+
+(a) oracle đạt ở cả hai phạm vi; (b) floor app tự tính 34,7% vs WAPE oracle 34,9% (ngày thường), 24,4% vs 25,7% (10.10); (c) ×1,5 trượt ở cả hai, baseline ngây thơ trượt ở 10.10 nhưng **qua được ở ngày thường on_dinh** (WAPE chỉ hơn sàn nhiễu 13% < 15%): trên ngày thường của mock, trung bình 7 ngày cùng giờ thật sự gần sàn nhiễu, và champion chỉ tốt hơn nó ~6%. Không chỉnh `tol` cho baseline trượt; nếu muốn khắt khe hơn thì `tol = 0,10` (champion 1,07 vẫn qua, baseline 1,13 trượt) — để chủ plan quyết.
+
+**Nhãn trên `demo` sau khi chạy lại** (backtest + dự báo 11/11 00:00, 24 h): verified 44, reference 242, scenario 14 (trước: 0 / 286 / 14). Nhân vật demo: NOICHIEN2L, BINHNUOC500-* (tsb, on_dinh, bối cảnh double_day) `reference`; AOGIUNHIET-*, DENLEDTET-* (mua_vu), COCMEME-* (trend) `reference`; MAYHUTMINI `scenario`. Mọi nhân vật đều dự báo cho 11.11 nên dùng điểm `double_day`, mà champion ngày đôi trượt (WAPE/floor 1,43 so với nhu cầu thật; trong app cũng trượt) — đúng là dự báo ngày đôi chưa đủ tốt để gắn "đã kiểm".
+
+**Chốt `WAPE_FLOOR_TOL = 0,10` (agent chính, 30/10, user giao quyết).** Nhãn "Đã kiểm" phải phân biệt được model với cách đoán ngây thơ; với 0,15 baseline 7 ngày cùng giờ (1,13) vẫn qua ở ngày thường. Với 0,10: oracle (1,02–1,05) và champion ngày thường (1,07) vẫn qua, baseline (1,13) và ×1,5 trượt. Đây là siết chặt, không nới. Đo lại trên demo với 0,10 (ingest → backtest → fit 300 SKU): verified 44, reference 242, scenario 14, giống hệt khi dùng 0,15, vì các nhóm đạt đều có champion WAPE/floor ≤ 1,07; nhân vật demo không đổi (NOICHIEN2L, BINHNUOC500-*, AOGIUNHIET-*, COCMEME-*, DENLEDTET-* reference; MAYHUTMINI scenario).
+
+**Ảnh hưởng.** Schema: thêm cột nullable `model_scores.wape_floor` (schema.sql `[DEV]` + migration 2 trong `warehouse/db.py`; `tests/unit/test_migrate.py` theo `MIGRATIONS`). Backtest lấy thêm một bộ mẫu không có `level_sigma` cho mỗi (SKU, model) (~+30% thời gian). Các số đo cũ vẫn in trong báo cáo eval, ghi "(cách đo cũ)", không chấm đạt/trượt.
+
 ## Kết quả (`uv run python -m eval.eval_forecast --size demo`, ~3 phút)
 
 | Kiểm tra | demo | Ngưỡng | |

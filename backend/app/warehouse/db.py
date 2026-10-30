@@ -35,7 +35,13 @@ SCHEMA_BASELINE_VERSION = 1
 
 # (version, note, sql). Append only; never edit an applied entry.
 # Example: (2, "add foo to skus", "ALTER TABLE skus ADD COLUMN IF NOT EXISTS foo VARCHAR")
-MIGRATIONS: list[tuple[int, str, str]] = []
+MIGRATIONS: list[tuple[int, str, str]] = [
+    (
+        2,
+        "model_scores.wape_floor (M2, 03 §7.3)",
+        "ALTER TABLE model_scores ADD COLUMN IF NOT EXISTS wape_floor DOUBLE",
+    ),
+]
 
 _TABLE_RE = re.compile(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", re.IGNORECASE)
 

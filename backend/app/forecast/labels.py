@@ -3,6 +3,19 @@
 ``scope`` = score of the champion on the **same group and context** as the request (11.11
 is ``double_day`` → scores of ``dd_*`` backtests, never normal days).
 
+Rule (03 §7.3, measured as in 03 §7.2):
+
+* ``history_days < 14`` → ``scenario``
+* ``verified`` when ``WAPE ≤ (1 + WAPE_FLOOR_TOL) · WAPE_floor`` and the randomised-PIT
+  coverage of the 80 % interval is in ``[0.72, 0.88]`` and ``n_sku_days ≥ 30``;
+  otherwise ``reference``. Drift active → at most ``reference``.
+
+``WAPE_floor`` is the WAPE the p50 would have if demand were ``NegBin(mean, k)`` around the
+model's own mean (computed by the backtest by Monte Carlo, no answer key; the model's
+``level_sigma`` is left out so vagueness does not lower the bar). Widening the
+distribution does not help: the floor does not move and the PIT coverage goes above 0.88.
+Decision log M2 §D.
+
 [DEV] 03 §7.3 has a code block (``scope is None → scenario``) and a sentence ("no score for
 this context → reference + reason"). Both are kept: never scored for the group at all →
 ``scenario``; scored for the group but not this context → ``reference`` with the reason
@@ -17,7 +30,7 @@ from typing import Literal, Protocol
 Label = Literal["verified", "reference", "scenario"]
 
 MIN_HISTORY_DAYS = 14
-MAX_WAPE = 0.30
+WAPE_FLOOR_TOL = 0.10  # WAPE may exceed the unavoidable WAPE by at most 10 % (M2-du-bao §D)
 COVERAGE_BAND = (0.72, 0.88)
 MIN_SKU_DAYS = 30
 
@@ -27,21 +40,36 @@ class ScopeLike(Protocol):
     def wape(self) -> float | None: ...
 
     @property
+    def wape_floor(self) -> float | None: ...
+
+    @property
     def coverage(self) -> float | None: ...
 
     @property
     def n_sku_days(self) -> int | None: ...
 
 
-def confidence_label(scope: ScopeLike | None, history_days: int, drift_active: bool) -> Label:
-    """Exactly the rule of 03 §7.3."""
+def wape_ok(wape: float | None, floor: float | None, tol: float = WAPE_FLOOR_TOL) -> bool:
+    return wape is not None and floor is not None and wape <= (1 + tol) * floor
+
+
+def coverage_ok(cov: float | None) -> bool:
+    return cov is not None and COVERAGE_BAND[0] <= cov <= COVERAGE_BAND[1]
+
+
+def confidence_label(
+    scope: ScopeLike | None,
+    history_days: int,
+    drift_active: bool,
+    *,
+    tol: float = WAPE_FLOOR_TOL,
+) -> Label:
+    """The rule of 03 §7.3 (error relative to the unavoidable error)."""
     if history_days < MIN_HISTORY_DAYS or scope is None:
         return "scenario"
     ok = (
-        scope.wape is not None
-        and scope.wape <= MAX_WAPE
-        and scope.coverage is not None
-        and COVERAGE_BAND[0] <= scope.coverage <= COVERAGE_BAND[1]
+        wape_ok(scope.wape, scope.wape_floor, tol)
+        and coverage_ok(scope.coverage)
         and (scope.n_sku_days or 0) >= MIN_SKU_DAYS
     )
     label: Label = "verified" if ok else "reference"
@@ -63,6 +91,7 @@ def decide_label(
     *,
     group_scored: bool,
     nowcast: bool = False,
+    tol: float = WAPE_FLOOR_TOL,
 ) -> LabelDecision:
     """Label + Vietnamese reasons, including the two plan cases above and ``nowcast``
     (at most ``reference``)."""
@@ -78,18 +107,20 @@ def decide_label(
             reasons.append("Mô hình chưa được backtest cho nhóm hàng này")
             label = "scenario"
     else:
-        label = confidence_label(scope, history_days, drift_active)
+        label = confidence_label(scope, history_days, drift_active, tol=tol)
         if label == "reference" and not drift_active:
             parts = []
             if scope.wape is None:
                 parts.append("không đủ SKU ≥ 1 sp/ngày để tính WAPE")
-            elif scope.wape > MAX_WAPE:
-                parts.append(f"WAPE backtest {scope.wape:.0%} > {MAX_WAPE:.0%}")
-            if scope.coverage is None or not (
-                COVERAGE_BAND[0] <= scope.coverage <= COVERAGE_BAND[1]
-            ):
+            elif not wape_ok(scope.wape, scope.wape_floor, tol):
+                fl = "—" if scope.wape_floor is None else f"{scope.wape_floor:.0%}"
+                parts.append(
+                    f"WAPE backtest {scope.wape:.0%} > {1 + tol:.2f} ×"
+                    f" mức sai không tránh được {fl}"
+                )
+            if not coverage_ok(scope.coverage):
                 cov = "—" if scope.coverage is None else f"{scope.coverage:.0%}"
-                parts.append(f"độ phủ khoảng p10–p90 {cov} ngoài 72–88%")
+                parts.append(f"độ phủ khoảng 80% (PIT) {cov} ngoài 72–88%")
             if (scope.n_sku_days or 0) < MIN_SKU_DAYS:
                 parts.append(f"chỉ {scope.n_sku_days or 0} SKU-ngày để kiểm")
             if parts:

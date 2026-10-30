@@ -64,7 +64,8 @@ class ValidatedScope(BaseModel):
     backtest: str | None = None
     wape: float | None = None
     bias: float | None = None
-    coverage: float | None = None
+    coverage: float | None = None  # randomised-PIT coverage of the 80 % interval
+    wape_floor: float | None = None  # expected WAPE under the model's own distribution
     pinball_50: float | None = None
     n_skus: int | None = None
     n_sku_days: int | None = None

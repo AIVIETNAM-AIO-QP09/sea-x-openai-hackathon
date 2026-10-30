@@ -5,7 +5,17 @@ With ``y`` actual and ``ŷ`` = p50, summed over the (SKU, day) cells of a backte
 * ``WAPE = Σ|y − ŷ| / Σ y`` at SKU × day (hours summed first; ŷ = median of the day total)
 * ``Bias = (Σŷ − Σy) / Σy``
 * ``Pinball_q = mean(max(q·(y − ŷ_q), (q − 1)·(y − ŷ_q)))`` at hour level, q ∈ {0.1, 0.5, 0.9}
-* ``Coverage`` = share of (SKU, day) with ``y ∈ [p10, p90]`` of the day total (target 80 %)
+* ``Coverage`` (80 %) = share of (SKU, day) whose **randomised PIT** of the day total lies in
+  ``[0.1, 0.9]``: ``u = F(y−1) + V·(F(y) − F(y−1))``, ``V ~ U(0, 1)`` seeded. For a correct
+  predictive distribution ``u`` is exactly uniform, so the measure is 80 % even for small
+  counts; the old ``y ∈ [p10, p90]`` (``coverage_interval``) reads ≈ 90 % there because the
+  mass of the end points is counted in full.
+* ``WAPE_floor`` = expected WAPE of the p50 if demand were ``NegBin(mean, k)`` around the
+  model's own hourly mean: ``Σ E|Y − p50| / Σ E[Y]`` over the same (SKU, day) cells, by
+  Monte Carlo (seeded). It is the error no forecast can avoid given the count noise; the
+  model's ``level_sigma`` is left out on purpose — it is the model's own ignorance, and
+  with it the floor grew with vagueness (a ×1.5 forecast passed on 10.10, M2 §D). The
+  label rule compares ``WAPE ≤ (1 + tol) · WAPE_floor`` instead of a fixed 30 %.
 
 WAPE only uses SKUs selling ≥ 1 unit/day (``wape_eligible``); sparse SKUs are judged on
 pinball.
@@ -48,6 +58,39 @@ def coverage(y: FloatArr, lo: FloatArr, hi: FloatArr) -> float | None:
     return float(np.mean((y >= lo) & (y <= hi))) if y.size else None
 
 
+def pit_bounds(samples: FloatArr, y: FloatArr) -> tuple[FloatArr, FloatArr]:
+    """``F(y−1)`` and ``F(y)`` of each column of ``samples [n, D]`` at ``y [D]``."""
+    lo = np.mean(samples < y[None, :], axis=0)
+    hi = np.mean(samples <= y[None, :], axis=0)
+    return np.asarray(lo, dtype=np.float64), np.asarray(hi, dtype=np.float64)
+
+
+def randomized_pit(samples: FloatArr, y: FloatArr, rng: np.random.Generator) -> FloatArr:
+    """Randomised PIT (Czado, Gneiting & Held 2009) for count data."""
+    lo, hi = pit_bounds(samples, y)
+    v = rng.uniform(size=lo.shape)
+    return np.asarray(lo + v * (hi - lo), dtype=np.float64)
+
+
+def pit_coverage(u: FloatArr, level: float = 0.8) -> float | None:
+    """Share of PIT values inside the central ``level`` interval."""
+    if u.size == 0:
+        return None
+    a = (1 - level) / 2
+    return float(np.mean((u >= a) & (u <= 1 - a)))
+
+
+def floor_stats(samples: FloatArr, p50: FloatArr) -> tuple[FloatArr, FloatArr]:
+    """Per column: ``E|Y − p50|`` and ``E[Y]`` under the predictive samples ``[n, D]``."""
+    mae = np.mean(np.abs(samples - p50[None, :]), axis=0)
+    return np.asarray(mae, dtype=np.float64), np.asarray(samples.mean(axis=0), dtype=np.float64)
+
+
+def wape_floor(floor_mae: FloatArr, floor_mean: FloatArr) -> float | None:
+    s = float(np.sum(floor_mean))
+    return float(np.sum(floor_mae) / s) if s > 0 else None
+
+
 @dataclass
 class ScoreRow:
     model_id: str
@@ -61,8 +104,10 @@ class ScoreRow:
     pinball_10: float | None
     pinball_50: float | None
     pinball_90: float | None
-    coverage: float | None
+    coverage: float | None  # randomised-PIT coverage of the 80 % interval
     is_champion: bool = False
+    wape_floor: float | None = None
+    coverage_interval: float | None = None  # old y ∈ [p10, p90] (reports only)
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -92,6 +137,9 @@ DAY_COLUMNS = (
     "pb50",
     "pb90",
     "n_hours",
+    "pit_u",
+    "floor_mae",
+    "floor_mean",
 )
 
 
@@ -117,7 +165,11 @@ def aggregate(
         pinball_10=pb[0.1],
         pinball_50=pb[0.5],
         pinball_90=pb[0.9],
-        coverage=coverage(
+        coverage=pit_coverage(days["pit_u"].to_numpy(float)) if len(days) else None,
+        wape_floor=wape_floor(el["floor_mae"].to_numpy(float), el["floor_mean"].to_numpy(float))
+        if len(el)
+        else None,
+        coverage_interval=coverage(
             days["y"].to_numpy(float), days["p10"].to_numpy(float), days["p90"].to_numpy(float)
         ),
     )

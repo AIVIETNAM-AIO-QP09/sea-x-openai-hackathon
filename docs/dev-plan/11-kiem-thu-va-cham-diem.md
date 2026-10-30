@@ -113,13 +113,14 @@ Báo cáo: "Bắt được 12/12 lỗi cài sẵn".
 |---|---|
 | WAPE | Σ|thật − p50| / Σ thật, theo nhóm nhu cầu và toàn shop |
 | Bias | Σ(p50 − thật) / Σ thật |
-| Coverage 80% | tỷ lệ giờ có thật ∈ [p10, p90] |
+| Coverage 80% | tỷ lệ (SKU, ngày) có PIT ngẫu nhiên hóa ∈ [0,1; 0,9] (03 §7.2; số đếm nhỏ làm `y ∈ [p10, p90]` lệch lên ~90%) |
+| WAPE_floor | WAPE kỳ vọng nếu nhu cầu theo NegBin(mean dự báo, k); nhãn `verified` cần WAPE ≤ 1,10 × floor (03 §7.3) |
 | Pinball loss | trung bình cho q = 0,1 / 0,5 / 0,9 |
 | **Lệch do hết hàng** | WAPE khi so với `ban_duoc` trừ WAPE khi so với `nhu_cau_that`, chỉ trên giờ có `het_hang=1` |
 
 So mỗi model ứng viên với **baseline ngây thơ** (trung bình cùng giờ 7 ngày trước). Báo cáo bảng model × nhóm × cửa sổ và tô champion.
 
-Ngưỡng đạt M2: champion tốt hơn baseline ngây thơ ≥ 15% WAPE trên 10.10 (toàn shop); coverage 80% trong [0,72; 0,88].
+Ngưỡng đạt M2: champion tốt hơn baseline ngây thơ ≥ 15% WAPE trên 10.10 (toàn shop); coverage 80% (PIT ngẫu nhiên hóa) trong [0,72; 0,88].
 
 **(4) iROAS** — so `iroas_estimates` với `chien_dich_that.csv`.
 

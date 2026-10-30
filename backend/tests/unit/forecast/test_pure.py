@@ -11,8 +11,19 @@ import pytest
 from app.core.events import DriftDetected
 from app.forecast import censoring
 from app.forecast.drift import active_up, cusum, scan
-from app.forecast.labels import confidence_label, decide_label
-from app.forecast.metrics import ScoreRow, aggregate, bias, coverage, pinball, wape
+from app.forecast.labels import WAPE_FLOOR_TOL, confidence_label, coverage_ok, decide_label, wape_ok
+from app.forecast.metrics import (
+    ScoreRow,
+    aggregate,
+    bias,
+    coverage,
+    floor_stats,
+    pinball,
+    pit_coverage,
+    randomized_pit,
+    wape,
+    wape_floor,
+)
 from app.forecast.registry import select_champions
 
 
@@ -78,23 +89,32 @@ def test_aggregate_drops_days_without_instock_hours() -> None:
             "pb50": [0.5, 0.0, 0.2],
             "pb90": [0.1, 0.0, 0.1],
             "n_hours": [24, 0, 24],
+            "pit_u": [0.5, 0.5, 0.95],
+            "floor_mae": [2.0, 0.0, 1.0],
+            "floor_mean": [10.0, 0.0, 4.0],
         }
     )
     r = aggregate(days, "bt", "on_dinh", "normal", "m")
     assert r.n_sku_days == 2
     assert r.wape == pytest.approx(0.1)  # only the eligible SKU
-    assert r.coverage == 1.0
+    assert r.coverage_interval == 1.0
+    assert r.coverage == 0.5  # PIT: 0.5 in, 0.95 out
+    assert r.wape_floor == pytest.approx(0.2)  # eligible SKU only
 
 
 # ---------------------------------------------------------------------- labels
-def _score(w: float | None, c: float | None, n: int = 60) -> ScoreRow:
-    return ScoreRow("m", "bt", "on_dinh", "normal", 10, n, w, 0.0, 0.1, 0.2, 0.1, c)
+def _score(w: float | None, c: float | None, n: int = 60, floor: float | None = 0.35) -> ScoreRow:
+    return ScoreRow(
+        "m", "bt", "on_dinh", "normal", 10, n, w, 0.0, 0.1, 0.2, 0.1, c, wape_floor=floor
+    )
 
 
 def test_confidence_label_rules() -> None:
-    assert confidence_label(_score(0.2, 0.8), 30, False) == "verified"
-    assert confidence_label(_score(0.2, 0.8), 30, True) == "reference"
-    assert confidence_label(_score(0.35, 0.8), 30, False) == "reference"
+    # WAPE 37 % against an unavoidable 35 % passes (≤ 1.15 ×); a fixed 30 % would not
+    assert confidence_label(_score(0.37, 0.8), 30, False) == "verified"
+    assert confidence_label(_score(0.37, 0.8), 30, True) == "reference"
+    assert confidence_label(_score(0.42, 0.8), 30, False) == "reference"  # > 1.15 × 0.35
+    assert confidence_label(_score(0.2, 0.8, floor=None), 30, False) == "reference"
     assert confidence_label(_score(0.2, 0.95), 30, False) == "reference"
     assert confidence_label(_score(0.2, 0.8, n=20), 30, False) == "reference"
     assert confidence_label(_score(0.1, 0.8), 7, False) == "scenario"
@@ -105,7 +125,7 @@ def test_decide_label_context_and_nowcast() -> None:
     d = decide_label(None, 60, False, group_scored=True)
     assert d.label == "reference" and "Chưa kiểm ở bối cảnh này" in d.reasons
     assert decide_label(None, 60, False, group_scored=False).label == "scenario"
-    assert decide_label(_score(0.2, 0.8), 60, False, group_scored=True, nowcast=True).label == (
+    assert decide_label(_score(0.3, 0.8), 60, False, group_scored=True, nowcast=True).label == (
         "reference"
     )
     assert decide_label(_score(0.2, 0.8), 5, False, group_scored=True).label == "scenario"
@@ -193,3 +213,49 @@ def test_incumbent_from_previous_run_kept() -> None:
     rows = [_r("a", "b1", 0.30), _r("b", "b1", 0.25)]
     champs, _ = select_champions(rows, ORDER, {("on_dinh", "double_day"): "a"})
     assert champs[("on_dinh", "double_day")] == "a"
+
+
+# ---------------------------------------------------------------------- PIT / floor
+def _day_totals(lam: np.ndarray, k: float, rng: np.random.Generator, n: int) -> np.ndarray:
+    """Day totals of 24 hourly NegBin(λ/24, k): ``[n, len(lam)]``."""
+    g = rng.gamma(k, 1 / k, size=(n, len(lam), 24))
+    return rng.poisson(lam[None, :, None] / 24 * g).sum(axis=2).astype(float)
+
+
+def test_randomized_pit_is_80_percent_for_the_true_distribution() -> None:
+    """Small counts: the old inclusive interval over-covers, the randomised PIT does not."""
+    rng = np.random.default_rng(20261111)
+    lam = rng.uniform(0.3, 4.0, size=4000)
+    pred = _day_totals(lam, 3.0, rng, 1000)  # predictive = truth
+    y = _day_totals(lam, 3.0, rng, 1)[0]
+    u = randomized_pit(pred, y, rng)
+    cov_pit = pit_coverage(u)
+    q10, q90 = np.quantile(pred, [0.1, 0.9], axis=0)
+    cov_old = coverage(y, q10, q90)
+    assert cov_pit is not None and abs(cov_pit - 0.80) < 0.02
+    assert cov_old is not None and cov_old > 0.86
+    assert coverage_ok(cov_pit)
+
+
+def test_wape_floor_matches_realised_wape_and_rejects_bad_forecasts() -> None:
+    rng = np.random.default_rng(7)
+    lam = rng.uniform(1.0, 15.0, size=3000)
+    y = _day_totals(lam, 3.0, rng, 1)[0]
+
+    def judge(lam_pred: np.ndarray) -> tuple[float, float, float]:
+        pred = _day_totals(lam_pred, 3.0, rng, 800)
+        p50 = np.median(pred, axis=0)
+        fl = wape_floor(*floor_stats(pred, p50))
+        cov = pit_coverage(randomized_pit(pred, y, rng))
+        w = wape(y, p50)
+        assert fl is not None and cov is not None and w is not None
+        return w, fl, cov
+
+    w, fl, cov = judge(lam)
+    assert abs(w - fl) / fl < 0.05  # floor = realised WAPE of the correct model
+    assert wape_ok(w, fl) and coverage_ok(cov)
+    w2, fl2, cov2 = judge(lam * 1.5)  # level 50 % too high
+    assert not (wape_ok(w2, fl2) and coverage_ok(cov2))
+    assert not wape_ok(w2, fl2, WAPE_FLOOR_TOL)
+    w3, fl3, cov3 = judge(np.full_like(lam, lam.mean()))  # ignores SKU differences
+    assert not (wape_ok(w3, fl3) and coverage_ok(cov3))

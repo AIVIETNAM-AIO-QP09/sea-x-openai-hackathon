@@ -37,8 +37,9 @@ from app.forecast.base import ForecastRequest
 from app.forecast.context import build_fit_context
 from app.forecast.data import PanelMatrix, vn_midnight_utc
 from app.forecast.drift import active_up
+from app.forecast.labels import WAPE_FLOOR_TOL, coverage_ok, wape_ok
 from app.forecast.metrics import bias as m_bias
-from app.forecast.metrics import pinball
+from app.forecast.metrics import floor_stats, pinball, pit_coverage, randomized_pit, wape_floor
 from app.forecast.metrics import wape as m_wape
 from app.forecast.models.trend_damped import TrendDamped
 from app.forecast.registry import write_scores
@@ -240,12 +241,11 @@ def score_backtests(
     cov_nr = metrics(nr, "full_p50", "true", "full_p10", "full_p90")
     rep.checks.append(
         Check(
-            "M2 · Coverage 80% theo ngày, normal_roll (so với nhu_cau_that)",
+            "(cách đo cũ) Coverage [p10, p90] theo ngày, normal_roll",
             pct(cov_nr.get("coverage")),
-            "0,72–0,88",
-            cov_nr.get("coverage") is not None
-            and COVERAGE_BAND[0] <= cov_nr["coverage"] <= COVERAGE_BAND[1],
-            f"10.10: {pct(w_all.get('coverage'))}",
+            "0,72–0,88 (chỉ để so)",
+            None,
+            f"10.10: {pct(w_all.get('coverage'))}; số đếm nhỏ làm cách đo này lệch lên, xem §D",
         )
     )
     # 03 §10 checks
@@ -253,10 +253,11 @@ def score_backtests(
     w_nr = metrics(nr_od, "full_p50", "true", None, None)
     rep.checks.append(
         Check(
-            "03 §10 · WAPE ngày thường (normal_roll, on_dinh, champion)",
+            "(cách đo cũ) WAPE ngày thường ≤ 30% (normal_roll, on_dinh)",
             pct(w_nr["wape"]),
-            "≤ 30%",
-            w_nr["wape"] is not None and w_nr["wape"] <= 0.30,
+            "≤ 30% (chỉ để so)",
+            None,
+            "thay bằng WAPE ≤ 1,15 × WAPE_floor, xem §D",
         )
     )
     dd_os = eligible_skus(dd[dd["demand_group"].isin(["on_dinh", "mua_vu"])])
@@ -550,6 +551,16 @@ def characters(
         )
     )
     rep.data["labels"] = labels
+    char_lab = {
+        r.sku_id: f"{r.confidence} ({r.model_id.split('@')[0]}, {r.demand_group})"
+        for r in res
+        if r.sku_id.startswith(tuple(CHARACTERS)) or r.sku_id == "NOICHIEN2L"
+    }
+    rep.data["character_labels"] = char_lab
+    rep.sections.append(
+        "## Nhãn của nhân vật demo (dự báo 11/11 00:00, 24 h)\n\n"
+        + table(pd.DataFrame(sorted(char_lab.items()), columns=["SKU", "nhãn (model, nhóm)"]))
+    )
     may = by.get("MAYHUTMINI")
     rep.checks.append(
         Check(
@@ -665,6 +676,183 @@ def performance(rep: Report, conn: duckdb.DuckDBPyConnection, m: PanelMatrix) ->
     )
 
 
+# ---------------------------------------------------------------------- new measure (M2 §D)
+SIM_SAMPLES = 500
+TRUE_K = 3.0  # NegBin size of the mock generator (mock-data/config.json demand.dispersion)
+
+
+def _sim_days(
+    lam: np.ndarray, k: np.ndarray, sigma: np.ndarray, rng: np.random.Generator, n: int
+) -> np.ndarray:
+    """Day totals ``[R, n]`` of 24 hourly NegBin(λ_h·L, k), ``L ~ LogNormal(0, σ)``."""
+    out = np.empty((lam.shape[0], n))
+    for a in range(0, lam.shape[0], 200):
+        b = min(a + 200, lam.shape[0])
+        kk = np.maximum(k[a:b], 1e-6)[:, None, None]
+        lvl = np.exp(rng.normal(0.0, 1.0, size=(b - a, n, 1)) * sigma[a:b, None, None])
+        g = rng.gamma(kk, 1.0 / kk, size=(b - a, n, lam.shape[1]))
+        out[a:b] = rng.poisson(lam[a:b, None, :] * lvl * g).sum(axis=2)
+    return out
+
+
+def judge(
+    samples: np.ndarray, floor_samples: np.ndarray, y: np.ndarray, rng: np.random.Generator
+) -> dict[str, Any]:
+    """WAPE of the p50, floor, randomised-PIT and old interval coverage. ``samples`` is the
+    predictive ``[R, n]``; ``floor_samples`` the same forecast without level uncertainty."""
+    s = samples.T  # [n, R]
+    p50 = np.median(s, axis=0)
+    fs = floor_samples.T
+    fm, fy = floor_stats(fs, np.median(fs, axis=0))
+    q10, q90 = np.quantile(s, [0.1, 0.9], axis=0)
+    w = m_wape(y, p50)
+    fl = wape_floor(fm, fy)
+    cov = pit_coverage(randomized_pit(s, y, rng))
+    return {
+        "n": len(y),
+        "wape": w,
+        "floor": fl,
+        "ratio": None if w is None or not fl else w / fl,
+        "cov_pit": cov,
+        "cov_old": float(np.mean((y >= q10) & (y <= q90))) if len(y) else None,
+        "pass": wape_ok(w, fl) and coverage_ok(cov),
+    }
+
+
+def _ratio(v: float | None) -> str:
+    return "—" if v is None else f"{v:.2f}"
+
+
+def new_measure(rep: Report, m: PanelMatrix, res: BacktestResult, hourly: pd.DataFrame) -> None:
+    """Phép thử của cách đo mới: oracle phải đạt, floor của app ≈ WAPE oracle, dự báo kém
+    có chủ đích phải trượt (M2 §D)."""
+    rng = np.random.default_rng(20261111)
+    tday = truth_by_day(hourly)
+    cd = attach_truth(champion_days(res), tday)
+    cd = cd[cd["full_samples"].notna()].reset_index(drop=True)
+    lam_true = (
+        hourly.assign(h=hourly["hour_utc"].dt.tz_convert(VN).dt.hour)
+        .pivot_table(index=["sku_id", "day"], columns="h", values="lambda_co_ads")
+        .reindex(columns=range(24))
+        .fillna(0.0)
+    )
+    assert res.hours is not None
+    local = res.hours["hour_utc"] + pd.Timedelta(hours=7)
+    hh = res.hours.assign(day=local.dt.date, h=local.dt.hour)
+    mean_h = (
+        hh.pivot_table(index=["model_id", "backtest", "sku_id", "day"], columns="h", values="mean")
+        .reindex(columns=range(24))
+        .fillna(0.0)
+    )
+    key_t = list(zip(cd["sku_id"], cd["day"], strict=True))
+    key_m = list(zip(cd["model_id"], cd["backtest"], cd["sku_id"], cd["day"], strict=True))
+    lt = lam_true.reindex(key_t).fillna(0.0).to_numpy(float)
+    lm = mean_h.reindex(key_m).fillna(0.0).to_numpy(float)
+    naive = np.zeros_like(lm)
+    for r, (sku, origin) in enumerate(zip(cd["sku_id"], cd["origin"], strict=True)):
+        t0 = m.hour_index(origin)
+        naive[r] = m.y[m.index[sku], max(0, t0 - 168) : t0].reshape(-1, 24).mean(axis=0)
+    y = cd["true"].to_numpy(float)
+    k = cd["k"].to_numpy(float)
+    sig = cd["sigma"].to_numpy(float)
+    n = len(y)
+    ch, orc = "champion (app)", "oracle (λ thật, k=3)"
+    bad = ["champion × 1,5", "baseline 7 ngày cùng giờ"]
+    cands = {
+        ch: np.stack(cd["full_samples"].to_list()).astype(float),
+        orc: _sim_days(lt, np.full(n, TRUE_K), np.zeros(n), rng, SIM_SAMPLES),
+        bad[0]: _sim_days(lm * 1.5, k, sig, rng, SIM_SAMPLES),
+        bad[1]: _sim_days(naive, k, np.full(n, 0.1), rng, SIM_SAMPLES),
+    }
+    zero = np.zeros(n)
+    floors = {
+        ch: _sim_days(lm, k, zero, rng, SIM_SAMPLES),
+        orc: cands[orc],
+        bad[0]: _sim_days(lm * 1.5, k, zero, rng, SIM_SAMPLES),
+        bad[1]: _sim_days(naive, k, zero, rng, SIM_SAMPLES),
+    }
+    main, dds = "normal_roll · on_dinh", "dd_1010 · on_dinh + mua_vu"
+    scopes = {
+        main: (cd["backtest"] == "normal_roll") & (cd["demand_group"] == "on_dinh"),
+        "normal_roll · mọi nhóm": cd["backtest"] == "normal_roll",
+        dds: (cd["backtest"] == "dd_1010") & cd["demand_group"].isin(["on_dinh", "mua_vu"]),
+    }
+    rows = []
+    tab: dict[tuple[str, str], dict[str, Any]] = {}
+    for sname, smask in scopes.items():
+        sel = (smask & cd["wape_eligible"].astype(bool)).to_numpy()
+        for cname, smp in cands.items():
+            j = judge(smp[sel], floors[cname][sel], y[sel], rng)
+            tab[(sname, cname)] = j
+            rows.append(
+                {
+                    "phạm vi": sname,
+                    "dự báo": cname,
+                    "SKU-ngày": j["n"],
+                    "WAPE": j["wape"],
+                    "WAPE_floor": j["floor"],
+                    "WAPE/floor": j["ratio"],
+                    "coverage PIT": j["cov_pit"],
+                    "coverage cũ [p10,p90]": j["cov_old"],
+                    "đạt": "✓" if j["pass"] else "✗",
+                }
+            )
+    rep.sections.append(
+        f"## Cách đo mới (M2 §D): WAPE ≤ {1 + WAPE_FLOOR_TOL:.2f} × WAPE_floor và coverage PIT"
+        " ∈ [0,72; 0,88]\n\nWAPE_floor = WAPE kỳ vọng của p50 nếu nhu cầu theo đúng phân phối "
+        "dự báo của chính dự báo đó (app tự tính, không đọc đáp án). Oracle = λ thật của bộ "
+        "sinh với NegBin k = 3. SKU ≥ 1 sp/ngày.\n\n" + table(pd.DataFrame(rows))
+    )
+    rep.data["new_measure"] = rows
+    a, b = tab[(main, orc)], tab[(dds, orc)]
+    rep.checks.append(
+        Check(
+            "M2 §D · (a) oracle đạt cả hai điều kiện (normal_roll on_dinh; 10.10)",
+            f"WAPE/floor {_ratio(a['ratio'])}, PIT {pct(a['cov_pit'])};"
+            f" 10.10: {_ratio(b['ratio'])}, PIT {pct(b['cov_pit'])}",
+            "đạt",
+            bool(a["pass"] and b["pass"]),
+        )
+    )
+    fl_n, w_n = tab[(main, ch)]["floor"], a["wape"]
+    fl_d, w_d = tab[(dds, ch)]["floor"], b["wape"]
+    ok_b = (
+        None not in (fl_n, w_n, fl_d, w_d) and abs(fl_n - w_n) <= 0.05 and abs(fl_d - w_d) <= 0.05
+    )
+    rep.checks.append(
+        Check(
+            "M2 §D · (b) WAPE_floor app tự tính ≈ WAPE oracle",
+            f"normal: {pct(fl_n)} vs {pct(w_n)};  10.10: {pct(fl_d)} vs {pct(w_d)}",
+            "|chênh| ≤ 5 điểm",
+            bool(ok_b),
+            f"chênh normal {pct(None if fl_n is None or w_n is None else fl_n - w_n)},"
+            f" 10.10 {pct(None if fl_d is None or w_d is None else fl_d - w_d)}",
+        )
+    )
+    rep.checks.append(
+        Check(
+            "M2 §D · (c) dự báo kém có chủ đích phải trượt",
+            "; ".join(
+                f"{c} ({s.split(' ·')[0]}): {'đạt' if tab[(s, c)]['pass'] else 'trượt'}"
+                for c in bad
+                for s in (main, dds)
+            ),
+            "trượt",
+            all(not tab[(s, c)]["pass"] for c in bad for s in (main, dds)),
+        )
+    )
+    j = tab[(main, ch)]
+    rep.checks.append(
+        Check(
+            "M2 · Champion ngày thường theo cách đo mới (normal_roll, on_dinh)",
+            f"WAPE {pct(j['wape'])} / floor {pct(j['floor'])} = {_ratio(j['ratio'])};"
+            f" PIT {pct(j['cov_pit'])} (cũ {pct(j['cov_old'])})",
+            f"≤ {1 + WAPE_FLOOR_TOL:.2f}; 0,72–0,88",
+            bool(j["pass"]),
+        )
+    )
+
+
 def render(rep: Report) -> str:
     lines = [
         f"# Chấm dự báo MegaDay Twin · {rep.size} · {rep.started.strftime('%Y-%m-%d %H:%M')} UTC",
@@ -697,7 +885,7 @@ def run(size: str, db: str | None = None, out: Path | None = None, quick: bool =
     specs = default_specs()
     if quick:
         specs = [s for s in specs if s.name in ("dd_0808", "dd_0909", "dd_1010", "normal_roll")]
-    res = run_backtest(m, specs, hourly=True)
+    res = run_backtest(m, specs, hourly=True, keep_samples=True)
     groups = {
         pd.Timestamp(o).to_pydatetime(): res.groups[f"{s.name}@{pd.Timestamp(o).isoformat()}"]
         for s in specs
@@ -713,6 +901,7 @@ def run(size: str, db: str | None = None, out: Path | None = None, quick: bool =
         register_models(conn)
         write_scores(conn, res.scores, m.panel_version)
     score_backtests(rep, m, res, res_raw, hourly)
+    new_measure(rep, m, res, hourly)
     classification(rep, conn, m, skus)
     characters(rep, conn, m, hourly)
     performance(rep, conn, m)

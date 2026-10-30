@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.warehouse import repo
-from app.warehouse.db import Database, expected_tables, list_tables
+from app.warehouse.db import MIGRATIONS, Database, expected_tables, list_tables
 
 # Every table named in docs/dev-plan (02, 03, 04, 05, 06, 07, 10).
 PLAN_TABLES = {
@@ -70,8 +70,8 @@ def test_migrate_is_idempotent(db: Database) -> None:
     first = db.migrate()
     second = db.migrate()
     assert first == second
-    rows = db.write.execute("SELECT version FROM schema_version").fetchall()
-    assert rows == [(1,)]
+    rows = db.write.execute("SELECT version FROM schema_version ORDER BY version").fetchall()
+    assert rows == [(1,)] + [(v,) for v, _, _ in sorted(MIGRATIONS)]
 
 
 def test_migrate_persists_on_disk(db: Database) -> None:

@@ -255,6 +255,7 @@ def _scope(info: ChampionInfo, group: str, context: str) -> ValidatedScope:
         wape=s.wape,
         bias=s.bias,
         coverage=s.coverage,
+        wape_floor=s.wape_floor,
         pinball_50=s.pinball_50,
         n_skus=s.n_skus,
         n_sku_days=s.n_sku_days,

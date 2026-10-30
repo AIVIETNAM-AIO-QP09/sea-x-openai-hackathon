@@ -24,7 +24,14 @@ from app.core.logging import get_logger
 from app.forecast.base import Context, ForecastRequest, nb_samples
 from app.forecast.context import FitContext, build_fit_context
 from app.forecast.data import PanelMatrix, vn_midnight_utc
-from app.forecast.metrics import MIN_WAPE_RATE, ScoreRow, pinball_sum, score_table
+from app.forecast.metrics import (
+    MIN_WAPE_RATE,
+    ScoreRow,
+    floor_stats,
+    pinball_sum,
+    randomized_pit,
+    score_table,
+)
 from app.forecast.models._common import BaseForecastModel, stable_seed
 from app.forecast.registry import BACKTEST_MODELS, MODELS, select_champions
 
@@ -109,6 +116,7 @@ def forecast_origin(
     n_samples: int = BACKTEST_SAMPLES,
     seed: int = 20261111,
     hourly: bool = False,
+    keep_samples: bool = False,
     ctx: FitContext | None = None,
     groups: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], FitContext]:
@@ -149,8 +157,18 @@ def forecast_origin(
             rng = np.random.default_rng(stable_seed(seed, sku, ctx.origin.isoformat(), name))
             smp = nb_samples(mf.mean, mf.dispersion_k, mf.level_sigma, rng, n_samples)[:, :n_obs]
             hq = np.quantile(smp, [0.1, 0.5, 0.9], axis=0)
-            dq = np.quantile(smp @ g_mask, [0.1, 0.5, 0.9], axis=0)
-            fq = np.quantile(smp @ g_full, [0.1, 0.5, 0.9], axis=0)
+            day_m = smp @ g_mask
+            day_f = smp @ g_full
+            dq = np.quantile(day_m, [0.1, 0.5, 0.9], axis=0)
+            fq = np.quantile(day_f, [0.1, 0.5, 0.9], axis=0)
+            pit_u = randomized_pit(day_m, y_day, rng)
+            # floor: noise the model believes in around its mean (NegBin k), without its
+            # own level uncertainty (M2 §D)
+            frng = np.random.default_rng(
+                stable_seed(seed, sku, ctx.origin.isoformat(), name, "floor")
+            )
+            fday = nb_samples(mf.mean, mf.dispersion_k, 0.0, frng, n_samples)[:, :n_obs] @ g_mask
+            f_mae, f_mean = floor_stats(fday, np.median(fday, axis=0))
             mean = mf.mean[:n_obs]
             sel = mask > 0
             for j, d in enumerate(days):
@@ -180,6 +198,12 @@ def forecast_origin(
                         "pb90": pinball_sum(yy, hq[2][in_day], 0.9),
                         "n_hours": int(in_day.sum()),
                         "phase": mf.phase,
+                        "pit_u": float(pit_u[j]),
+                        "floor_mae": float(f_mae[j]),
+                        "floor_mean": float(f_mean[j]),
+                        "k": mf.dispersion_k,
+                        "sigma": mf.level_sigma,
+                        "full_samples": day_f[:, j].astype(np.float32) if keep_samples else None,
                     }
                 )
             if hourly:
@@ -209,6 +233,7 @@ def run_backtest(
     n_samples: int = BACKTEST_SAMPLES,
     seed: int = 20261111,
     hourly: bool = False,
+    keep_samples: bool = False,
     incumbents: dict[tuple[str, str], str] | None = None,
     groups_by_origin: dict[datetime, dict[str, str]] | None = None,
 ) -> BacktestResult:
@@ -232,6 +257,7 @@ def run_backtest(
                 n_samples=n_samples,
                 seed=seed,
                 hourly=hourly,
+                keep_samples=keep_samples,
                 groups=g_fixed,
             )
             day_rows += d
