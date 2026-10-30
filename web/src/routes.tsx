@@ -1,10 +1,10 @@
 import type { RouteObject } from 'react-router';
 import { AppShell } from './components/AppShell';
+import { CompareIndexPage, ComparePage } from './pages/compare/ComparePage';
 import { ShiftOverviewPage } from './pages/ShiftOverviewPage';
 import {
   AlertsPage,
   AssistantPage,
-  ComparePage,
   DecisionsPage,
   ImportPage,
   NotFoundPage,
@@ -23,7 +23,7 @@ export const routes: RouteObject[] = [
       { path: 'sku/:sku', element: <SkuDetailPage /> },
       { path: 'sku/:sku/compare', element: <ComparePage /> },
       { path: 'campaign/:id/compare', element: <ComparePage /> },
-      { path: 'compare', element: <ComparePage /> },
+      { path: 'compare', element: <CompareIndexPage /> },
       { path: 'import', element: <ImportPage /> },
       { path: 'alerts', element: <AlertsPage /> },
       { path: 'decisions', element: <DecisionsPage /> },

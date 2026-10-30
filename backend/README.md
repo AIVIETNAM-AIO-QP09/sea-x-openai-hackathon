@@ -67,9 +67,9 @@ Có thể ghép: `uv run python tasks.py fmt check`. `Makefile` chỉ gọi lạ
 | `ingest-live --dir DIR` | có | Nạp phần mới của thư mục live (`live_stream/` của `replay.js`, hoặc `live_11_11/` cả ngày). Gọi lại mỗi khi `trang_thai.json` đổi |
 | `rebuild-panel` | có | Dựng lại toàn bộ `hourly_panel` |
 | `eval [--size demo] [--live-hours 3]` | có | Chạy `python -m eval.eval_data` (tiến trình riêng) |
-| `backtest` | chưa (FC-09) | thoát mã 3, in task phụ trách |
-| `fit` | chưa (FC-09, ORC-03) | |
-| `estimate-ads` | chưa (ADS-06) | |
+| `backtest` | có | Backtest rolling-origin → `model_scores` |
+| `fit` | có | Dự báo champion cho mọi SKU → `forecasts` |
+| `estimate-ads` | có | iROAS mọi chiến dịch → `iroas_estimates` |
 
 ### Nạp dữ liệu và chấm điểm lớp dữ liệu (M1)
 
@@ -85,6 +85,28 @@ Phát lại 11.11 theo giờ: chạy `node replay.js --size demo --interval 20` 
 
 Pipeline (`app/ingest/pipeline.py`): nhận diện file theo header → adapter (bỏ PII khi đọc) → ghi `products/skus/orders/order_lines`, `campaigns`, `sale_commitments` → ghép SKU (`sku_matching`) → gán `sku_id` cho tồn/kế hoạch nhập/phiếu nhập/giá vốn (dòng có alias đang chờ thì giữ lại, không ghi) → `ad_hourly`, `inventory_snapshots`, `restock_*`, `cost_items` → `data_quality_issues` (`app/ingest/quality.py`) → `hourly_panel` → `DataUpdated`. Quyết định: [docs/quyet-dinh/M1-pipeline.md](../docs/quyet-dinh/M1-pipeline.md).
 
+## API (M3)
+
+```powershell
+cd backend
+uv run python -m app.cli reset --yes
+uv run python -m app.cli ingest --dir ../mock-data/out/demo
+uv run python -m app.cli backtest; uv run python -m app.cli fit; uv run python -m app.cli estimate-ads
+uv run uvicorn app.main:app --port 8000          # hoặc: uv run python tasks.py dev
+```
+
+Mọi endpoint ở `http://localhost:8000/api/v1`, OpenAPI ở `/api/v1/openapi.json`, Swagger ở `/docs`. Trừ `/health`, request phải có `X-User` (vd `u-ops-1`) và `X-Role: viewer|operator|lead`.
+
+```bash
+H='-H X-User:u-ops-1 -H X-Role:operator'
+curl $H http://localhost:8000/api/v1/freshness
+curl $H "http://localhost:8000/api/v1/skus?limit=5"
+curl -H X-User:u-lead-1 -H X-Role:lead -H Content-Type:application/json -X POST      http://localhost:8000/api/v1/goals -d '{"scope_id":"CD002","kind":"profit","deadline":"2026-11-12T00:00:00+07:00"}'
+curl $H -H Content-Type:application/json -X POST http://localhost:8000/api/v1/scenarios/run      -d '{"campaign_id":"CD002","samples":1000}'
+```
+
+Các nhóm route: `system` (`/me`, `/freshness`), `skus`, `campaigns`, `goals-parameters`, `scenarios` (+ `/recommendations`), `ingest` (+ `/data-quality`). Danh sách đầy đủ, quyền, tên trường và ví dụ phản hồi thật: [docs/quyet-dinh/M3-api.md](../docs/quyet-dinh/M3-api.md). Lần gọi `/scenarios/run` đầu tiên ở một mốc mới phải dự báo nên mất 10–25 giây; sau khi `fit` xong, mỗi lần chạy dưới 1 giây. Test API: `uv run pytest tests/api` (e2e demo: `tests/api/test_cd002_1111.py`; đo thời gian: `-m perf`).
+
 ## Cấu trúc
 
 ```
@@ -98,7 +120,7 @@ backend/
 │  ├─ cli.py           # typer
 │  ├─ core/            # config, timeutil, money, ids, errors, events, logging, messages_vi
 │  ├─ warehouse/       # db.py (1 connection ghi, migrate), schema.sql (HỢP ĐỒNG), repo.py, seeds/
-│  ├─ api/             # router.py (prefix /api/v1), health.py, schemas.py (Envelope/Meta), errors.py
+│  ├─ api/             # router.py (/api/v1), deps.py (X-User/X-Role), common.py, snapshot.py, system/skus/campaigns/economics/scenarios/ingest.py
 │  └─ ingest/ panel/ forecast/ ads_effect/ economics/ simulator/
 │     orchestrator/ governance/ ai/ live/      # package rỗng, docstring trỏ file plan + task
 ├─ tests/{unit,integration,e2e}/

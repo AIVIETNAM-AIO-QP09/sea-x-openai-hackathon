@@ -5,9 +5,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api import health
+from app.api import campaigns, economics, health, ingest, scenarios, skus, system
 
 API_PREFIX = "/api/v1"
 
 api_router = APIRouter(prefix=API_PREFIX)
 api_router.include_router(health.router)
+api_router.include_router(system.router)
+api_router.include_router(skus.router)
+api_router.include_router(campaigns.router)
+api_router.include_router(economics.router)
+api_router.include_router(scenarios.router)
+api_router.include_router(ingest.router)

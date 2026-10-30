@@ -23,6 +23,9 @@
   --danger-soft: #fdecea;
   --neutral: #5b6472;
   --neutral-soft: #eef0f3;
+  /* ZoneBar regions (09 §4): two calm hues, neither reads as good/bad. */
+  --zone-continue: #dce8fb;
+  --zone-pause: #fbecc8;
   color-scheme: light;
 }
 
@@ -45,6 +48,8 @@
   --danger-soft: #331a18;
   --neutral: #9aa3b1;
   --neutral-soft: #222831;
+  --zone-continue: #1c2b47;
+  --zone-pause: #3a2e14;
   color-scheme: dark;
 }
 
@@ -67,6 +72,8 @@
   --color-danger-soft: var(--danger-soft);
   --color-neutral: var(--neutral);
   --color-neutral-soft: var(--neutral-soft);
+  --color-zone-continue: var(--zone-continue);
+  --color-zone-pause: var(--zone-pause);
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
 }
 

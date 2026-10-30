@@ -1,4 +1,5 @@
-// Minimal badges needed by the skeleton. WEB-02 extends these (popovers, CitationChip, Range...).
+// Confidence, compute-state and freshness badges (09 §4). CitationChip, MoneyVND,
+// Range and ZoneBar live in their own files.
 import type { ComputeState, Confidence, FreshnessSource } from '../api/types';
 import { formatDateTime, formatTime } from '../lib/format';
 import { viText } from '../lib/i18n';
@@ -42,9 +43,13 @@ const freshnessDot: Record<FreshnessSource['status'], string> = {
 };
 
 export function FreshnessBadge({ source }: { source: FreshnessSource }) {
-  const label = viText.freshnessSource[source.source] ?? source.source;
+  const label = viText.freshnessSource[source.source] ?? source.label;
   const status = viText.freshnessStatus[source.status] ?? source.status;
-  const tip = viText.freshnessTooltip(label, formatDateTime(source.as_of), status);
+  const extra = [
+    source.lag_minutes != null ? viText.freshnessLag(source.lag_minutes, source.threshold_minutes) : null,
+    source.missing_skus ? viText.freshnessMissingSkus(source.missing_skus) : null,
+  ].filter(Boolean);
+  const tip = [viText.freshnessTooltip(label, formatDateTime(source.as_of), status), ...extra].join(', ');
   return (
     <span title={tip} aria-label={tip} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs">
       {label}

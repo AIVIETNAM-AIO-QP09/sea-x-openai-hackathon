@@ -2,6 +2,7 @@
 
 Every response that carries numbers uses ``Envelope[T]`` with a ``Meta`` that
 states ``data_as_of``, ``computed_at``, ``compute_state`` and ``confidence``.
+Lists use ``Page[T]`` (same plus a top-level ``next_cursor``, 08 §1 "Phân trang").
 Datetimes are serialised as ISO 8601 with the ``+07:00`` offset.
 """
 
@@ -26,9 +27,15 @@ T = TypeVar("T")
 
 
 class SourceRef(BaseModel):
+    """Where a number comes from (CitationChip on the web, M3-web §6). ``data_as_of``,
+    ``tool`` and ``href`` are optional additions to 08 §1."""
+
     id: str
     kind: str
     label: str
+    data_as_of: LocalDatetime | None = None
+    tool: str | None = None
+    href: str | None = None
 
 
 class Meta(BaseModel):
@@ -37,11 +44,18 @@ class Meta(BaseModel):
     compute_state: ComputeState | None = None
     confidence: Confidence | None = None
     sources: list[SourceRef] = Field(default_factory=list)
+    cache_hit: bool | None = None  # POST /scenarios/run only
 
 
 class Envelope(BaseModel, Generic[T]):
     data: T
     meta: Meta = Field(default_factory=Meta)
+
+
+class Page(BaseModel, Generic[T]):
+    data: list[T]
+    meta: Meta = Field(default_factory=Meta)
+    next_cursor: str | None = None
 
 
 class ErrorInfo(BaseModel):

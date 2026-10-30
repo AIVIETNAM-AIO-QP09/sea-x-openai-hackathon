@@ -1,6 +1,7 @@
-import { Inbox, RefreshCw, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Inbox, Info, RefreshCw, TriangleAlert, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ApiError } from '../api/client';
+import { formatTime } from '../lib/format';
 import { viText } from '../lib/i18n';
 
 export function PageHeader({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
@@ -64,6 +65,52 @@ export function SkeletonRows({ rows = 3, label = viText.state.loading }: { rows?
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="h-14 animate-pulse rounded-lg bg-surface-2" />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Page-top band (09 §4): yellow "data older than threshold" or grey "scenario /
+ * assumption". Text always states the consequence, not just the colour.
+ */
+export function Banner({ tone, children }: { tone: 'warn' | 'neutral'; children: ReactNode }) {
+  const style =
+    tone === 'warn'
+      ? 'border-warn/50 bg-warn-soft text-fg'
+      : 'border-dashed border-neutral/60 bg-neutral-soft text-fg';
+  const Icon = tone === 'warn' ? TriangleAlert : Info;
+  return (
+    <div role="status" className={`mb-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${style}`}>
+      <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${tone === 'warn' ? 'text-warn' : 'text-neutral'}`} />
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Old data stays visible at 60% while a recompute runs, with a tag
+ * "Đang cập nhật · dữ liệu lúc 13:05" (09 §4).
+ */
+export function UpdatingRegion({
+  updating,
+  dataAsOf,
+  children,
+  className = '',
+}: {
+  updating: boolean;
+  dataAsOf?: string | null;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div aria-busy={updating} className={`relative ${className}`}>
+      {updating ? (
+        <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-full border border-accent/40 bg-surface px-2 py-0.5 text-xs font-medium text-accent">
+          <RefreshCw aria-hidden className="size-3 animate-spin" />
+          {viText.banner.updating(dataAsOf ? formatTime(dataAsOf) : '—')}
+        </span>
+      ) : null}
+      <div className={updating ? 'opacity-60 transition-opacity' : 'transition-opacity'}>{children}</div>
     </div>
   );
 }

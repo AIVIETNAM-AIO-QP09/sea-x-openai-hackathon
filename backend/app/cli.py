@@ -3,8 +3,8 @@
 Implemented: ``migrate``, ``reset``, ``seed``, ``serve``, ``tables``, ``ingest``,
 ``ingest-live``, ``rebuild-panel``, ``eval`` (runs ``python -m eval.eval_data`` in a
 subprocess: ``app`` never imports ``eval``).
-Stubs (exit code 3, message names the owning task): ``backtest``, ``fit``,
-``estimate-ads``.
+``estimate-ads`` (iROAS, plan 04). Stubs (exit code 3, message names the owning task): none
+left; ``_todo`` stays for future commands.
 """
 
 from __future__ import annotations
@@ -316,17 +316,67 @@ def fit(
     database.close()
 
 
+def _num(x: float | None, digits: int = 2) -> str:
+    return "—" if x is None else f"{x:.{digits}f}".replace(".", ",")
+
+
 @cli.command("estimate-ads")
-def estimate_ads() -> None:
-    """Ước lượng iROAS cho mọi chiến dịch."""
-    _todo("estimate-ads", "ADS-06", "docs/dev-plan/04-hieu-qua-ads.md §7")
+def estimate_ads(
+    db: DbOpt = None,
+    campaign: Annotated[
+        list[str] | None, typer.Option("--campaign", help="Chỉ ước lượng các chiến dịch này.")
+    ] = None,
+    no_stock_rules: Annotated[
+        bool,
+        typer.Option(
+            "--no-stock-rules", help="Không loại giờ sắp hết hàng (chỉ để so sánh, 04 §9)."
+        ),
+    ] = False,
+    write: Annotated[bool, typer.Option(help="Ghi kết quả vào iroas_estimates.")] = True,
+) -> None:
+    """Ước lượng iROAS cho mọi chiến dịch (04), ghi bảng iroas_estimates."""
+    from app.ads_effect.iroas import estimate_all, write_estimates
+
+    database = _db(db)
+    database.migrate()
+    run = estimate_all(database.write, campaign, apply_stock_rules=not no_stock_rules)
+    if not run.estimates:
+        typer.echo(vi.ADS_NONE)
+        database.close()
+        return
+    if write:
+        write_estimates(database.write, run.estimates)
+    no_ads = run.rhythm_source == "no_ads_skus"
+    typer.echo(
+        vi.ADS_DONE.format(
+            n=len(run.estimates),
+            s=run.seconds,
+            delta=_num(run.delta, 1),
+            rhythm=vi.ADS_RHYTHM_NO_ADS if no_ads else vi.ADS_RHYTHM_ALL,
+            labels=", ".join(f"{k} {v}" for k, v in sorted(run.labels.items())),
+        )
+    )
+    for e in run.estimates:
+        typer.echo(
+            vi.ADS_LINE.format(
+                cid=e.campaign_id,
+                roas=_num(e.platform_roas),
+                mean=_num(e.iroas_mean),
+                p10=_num(e.iroas_p10),
+                p90=_num(e.iroas_p90),
+                marg=_num(e.marginal_iroas),
+                be=_num(e.breakeven_iroas),
+                label=e.confidence,
+            )
+        )
+    database.close()
 
 
 @cli.command("eval")
 def eval_(
     size: Annotated[str, typer.Option("--size", help="Cỡ mock-data: nho | demo.")] = "demo",
     kind: Annotated[
-        str, typer.Option("--kind", help="data | forecast | all: lớp cần chấm.")
+        str, typer.Option("--kind", help="data | forecast | ads | all: lớp cần chấm.")
     ] = "data",
     live_hours: Annotated[int, typer.Option(help="Số giờ live 11.11 để đo thời gian.")] = 3,
 ) -> None:
@@ -344,9 +394,10 @@ def eval_(
             str(live_hours),
         ],
         "forecast": [sys.executable, "-m", "eval.eval_forecast", "--size", size],
+        "ads": [sys.executable, "-m", "eval.eval_ads", "--size", size],
     }
     if kind not in (*cmds, "all"):
-        raise typer.BadParameter("--kind phải là data, forecast hoặc all")
+        raise typer.BadParameter("--kind phải là data, forecast, ads hoặc all")
     code = 0
     for name in cmds if kind == "all" else (kind,):
         cmd = cmds[name]

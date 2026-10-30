@@ -21,8 +21,8 @@ function withSign(value: number, body: string): string {
 }
 
 /** 35880 → "35.880"; 22.5 → "22,5". Uses a true minus sign for negatives. */
-export function formatNumber(value: number, maxFractionDigits = 1): string {
-  if (!Number.isFinite(value)) return '—';
+export function formatNumber(value: number | null | undefined, maxFractionDigits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '—';
   return withSign(value, nf(0, maxFractionDigits).format(Math.abs(value)));
 }
 
@@ -44,7 +44,8 @@ export function formatVndMillions(value: number, style: 'short' | 'long' = 'shor
 }
 
 /** 41 → "41 sp". */
-export function formatUnits(value: number, maxFractionDigits = 1): string {
+export function formatUnits(value: number | null | undefined, maxFractionDigits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '—';
   return `${formatNumber(value, maxFractionDigits)} sp`;
 }
 
@@ -61,25 +62,26 @@ const timeFormat = new Intl.DateTimeFormat('en-GB', {
 });
 const dateFormat = new Intl.DateTimeFormat('en-GB', { timeZone: VN_TZ, day: '2-digit', month: '2-digit' });
 
-function toDate(value: string | Date): Date | null {
+function toDate(value: string | Date | null | undefined): Date | null {
+  if (value == null) return null;
   const d = typeof value === 'string' ? new Date(value) : value;
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /** ISO (UTC or +07:00) → "14:59" in Vietnam time. */
-export function formatTime(value: string | Date): string {
+export function formatTime(value: string | Date | null | undefined): string {
   const d = toDate(value);
   return d ? timeFormat.format(d) : '—';
 }
 
 /** ISO → "12/11" in Vietnam time. */
-export function formatDate(value: string | Date): string {
+export function formatDate(value: string | Date | null | undefined): string {
   const d = toDate(value);
   return d ? dateFormat.format(d) : '—';
 }
 
 /** ISO → "12/11 10:00" in Vietnam time. */
-export function formatDateTime(value: string | Date): string {
+export function formatDateTime(value: string | Date | null | undefined): string {
   const d = toDate(value);
   return d ? `${dateFormat.format(d)} ${timeFormat.format(d)}` : '—';
 }

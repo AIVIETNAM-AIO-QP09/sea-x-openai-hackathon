@@ -24,6 +24,7 @@ dependencies = [
     "typer>=0.12",
     "tzdata>=2024.1",
     "pytz>=2024.1",
+    "python-multipart>=0.0.9",
 ]
 
 [dependency-groups]
@@ -99,10 +100,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-q"
+addopts = "-q -m 'not perf'"
 markers = [
     "integration: needs mock-data/out/nho",
     "e2e: needs mock-data/out/demo",
+    "perf: đo thời gian, phụ thuộc máy; chạy riêng khi máy rảnh: pytest -m perf",
 ]
 # DuckDB's DataFrame export calls DataFrame.drop(inplace=…), deprecated in pandas 3.1.
 filterwarnings = ["ignore:The inplace keyword in DataFrame.drop is deprecated"]
