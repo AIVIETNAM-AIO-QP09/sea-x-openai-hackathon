@@ -18,6 +18,9 @@ một :class:`AliasMatch` cho mỗi alias, đúng các cột của ``sku_aliases
 * Tên viết tắt mà sheet tồn dùng chung cho nhiều mã nội bộ (tên bị cắt cụt): ở
   nguồn không có mã (giá vốn), mọi SKU mà tên đó có thể chỉ tới nhận cùng điểm, nên
   chỉ loại trừ 1–1 mới tách được. Cùng (nguồn, mã, tên) mà khác giá → không tự động.
+* Mã dòng ``row:<n>`` (file giá vốn, :data:`ROW_CODE_PREFIX`) chỉ để tách hai dòng
+  cùng tên thành hai alias (khóa UNIQUE của ``sku_aliases``); khi chấm điểm nó được
+  coi là "không có mã" (:func:`has_code`).
 * Mã nội bộ ``<gốc>-<hậu tố>`` (sheet tồn): hậu tố khớp đầu mã biến thể sàn /
   tên biến thể → +0,05; không khớp trong khi một SKU anh em khớp → −0,15.
 * Giá (file giá vốn): giá vốn > giá niêm yết → −0,20; < 15 % giá niêm yết → −0,10.
@@ -111,9 +114,19 @@ class CatalogSku(BaseModel):
     daily_out: dict[str, float] | None = None
 
 
+ROW_CODE_PREFIX = "row:"
+
+
+def has_code(raw_code: str) -> bool:
+    """A real source code (stock-sheet internal code, platform SKU). ``''`` and the
+    cost file's line codes ``row:<n>`` are "no code" for scoring."""
+    return bool(raw_code) and not raw_code.startswith(ROW_CODE_PREFIX)
+
+
 class AliasRecord(BaseModel):
     """Một tên/mã thô cần ghép. ``raw_code`` = '' khi nguồn không có mã (B2,
-    INF-backend.md). ``price``: giá vốn (nguồn cost). ``daily_out``: xuất kho theo
+    INF-backend.md), ``row:<n>`` cho dòng giá vốn trùng tên (chỉ để tách khóa, coi
+    như không có mã). ``price``: giá vốn (nguồn cost). ``daily_out``: xuất kho theo
     ngày (nguồn inventory, :func:`stock_flow`)."""
 
     model_config = ConfigDict(frozen=True)
@@ -252,6 +265,8 @@ class _Sku:
 
 
 def _code_suffix(raw_code: str) -> str:
+    if not has_code(raw_code):
+        return ""
     return raw_code.rsplit("-", 1)[1].lower() if "-" in raw_code else ""
 
 
@@ -442,7 +457,7 @@ def resolve(
             )
             if prev.sku_id:
                 held[a.source_type].add(prev.sku_id)
-        elif a.raw_code and a.raw_code in sku_ids:
+        elif has_code(a.raw_code) and a.raw_code in sku_ids:
             out.append(
                 make(
                     a,
@@ -461,12 +476,12 @@ def resolve(
     # Nguồn có mã (sheet tồn) chạy trước: tên viết tắt dùng chung cho nhiều mã nội bộ
     # cho biết tên đó mơ hồ, và các SKU nó có thể chỉ tới (xem _resolve_source).
     shorthand: dict[str, set[str]] = {}
-    ordered = sorted(by_source.items(), key=lambda kv: not any(a.raw_code for a in kv[1]))
+    ordered = sorted(by_source.items(), key=lambda kv: not any(has_code(a.raw_code) for a in kv[1]))
     for source, items in ordered:
         pool = [s for s in skus if s.c.sku_id not in held[source]]
         res = _resolve_source(items, pool, product_of, cfg, make, shorthand, duplicated)
         out.extend(res)
-        if any(a.raw_code for a in items):
+        if any(has_code(a.raw_code) for a in items):
             names: dict[str, set[str]] = defaultdict(set)
             codes: dict[str, set[str]] = defaultdict(set)
             for m in res:
@@ -500,7 +515,7 @@ def _resolve_source(
         # mẫu gốc lẫn tên cụt của mẫu 2..6). Chỉ loại trừ 1–1 mới tách được.
         group = [col[k] for k in shorthand.get(norm_name(a.raw_name, cfg.abbreviations), ())
                  if k in col]  # fmt: skip
-        if len(group) > 1 and not a.raw_code:
+        if len(group) > 1 and not has_code(a.raw_code):
             scores[i, group] = scores[i, group].max()
     assigned = np.full(n_a, -1)
     if pool:
@@ -514,7 +529,7 @@ def _resolve_source(
     second = np.zeros(n_a)
     groups: dict[str, list[int]] = defaultdict(list)
     for i, a in enumerate(items):
-        if a.raw_code:
+        if has_code(a.raw_code):
             groups[_code_base(a.raw_code)].append(i)
 
     for _ in range(100):  # đơn điệu trừ khi bị hạ; chặn trên cho chắc
@@ -554,7 +569,7 @@ def _resolve_source(
             if scores[i, j] > 0
         ]
         j = assigned[i]
-        method: MatchMethod = "code_pattern" if a.raw_code and _code_suffix(a.raw_code) else "fuzzy"
+        method: MatchMethod = "code_pattern" if _code_suffix(a.raw_code) else "fuzzy"
         if j < 0:
             result.append(
                 make(a, sku_id=None, score=None, method=None, status="pending",

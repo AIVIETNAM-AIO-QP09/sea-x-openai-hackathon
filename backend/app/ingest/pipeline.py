@@ -71,6 +71,7 @@ from app.ingest.quality import (
     write_batch_issues,
 )
 from app.ingest.sku_matching import (
+    ROW_CODE_PREFIX,
     AliasMatch,
     AliasRecord,
     CatalogSku,
@@ -430,6 +431,21 @@ def _db_inventory_context(conn: duckdb.DuckDBPyConnection) -> list[AliasRecord]:
     ]
 
 
+def _cost_codes(names: Iterable[Any], codes: Iterable[Any]) -> list[str]:
+    """Alias code of each cost line: the adapter's ``row:<n>`` when the same name is
+    typed on several lines of the file (two SKUs typed alike, different prices), else
+    ``''``. Unique names keep the key ``(cost, '', name)``, stable when lines move in
+    the next version of the file (a user's confirmation is kept)."""
+    names = [str(n) for n in names]
+    counts: dict[str, int] = {}
+    for n in names:
+        counts[n] = counts.get(n, 0) + 1
+    return [
+        str(c) if counts[n] > 1 and str(c).startswith(ROW_CODE_PREFIX) else ""
+        for n, c in zip(names, codes, strict=True)
+    ]
+
+
 def _aliases_from(items: Sequence[_Item]) -> tuple[list[AliasRecord], list[AliasRecord]]:
     orders: list[AliasRecord] = []
     hard: list[AliasRecord] = []
@@ -459,14 +475,15 @@ def _aliases_from(items: Sequence[_Item]) -> tuple[list[AliasRecord], list[Alias
                     )
                 )
         elif src is SourceType.COST:
-            # The cost file has no code: alias key (cost, '', name), as tuned in ING-08
-            # (docs/quyet-dinh/M1-pipeline.md §2). Two lines with the same name and a
-            # different price collapse into one alias that stays pending.
-            for name, price in zip(si["raw_name"], si["price"], strict=True):
+            # The cost file has no code. Lines typed with the same name get the
+            # adapter's ``row:<n>`` so each is its own alias; sku_matching scores
+            # ``row:`` codes as "no code" (M1-pipeline "Hoàn thiện M1").
+            codes = _cost_codes(si["raw_name"], si["raw_code"])
+            for name, code, price in zip(si["raw_name"], codes, si["price"], strict=True):
                 hard.append(
                     AliasRecord(
                         source_type="cost",
-                        raw_code="",
+                        raw_code=code,
                         raw_name=str(name),
                         price=None if pd.isna(price) else int(price),
                     )
@@ -514,26 +531,41 @@ def _match_skus(conn: duckdb.DuckDBPyConnection, items: Sequence[_Item]) -> dict
             continue
         to_write.append(m)
     write_aliases(conn, to_write, catalog)
+    _drop_merged_cost_aliases(conn, hard)
     return {"resolved": len(new_orders) + len(to_write)}
+
+
+def _drop_merged_cost_aliases(conn: duckdb.DuckDBPyConnection, hard: Sequence[AliasRecord]) -> None:
+    """A name now split into ``row:<n>`` aliases leaves its old merged alias
+    ``(cost, '', name)`` behind (databases loaded before the split). Drop it while
+    still pending; a user's decision is never removed."""
+    split = sorted({a.raw_name for a in hard if a.source_type == "cost" and a.raw_code})
+    if split:
+        conn.execute(
+            "DELETE FROM sku_aliases WHERE source_type = 'cost' AND raw_code = '' "
+            "AND status = 'pending' AND raw_name IN (SELECT unnest(?))",
+            [split],
+        )
 
 
 def _alias_maps(
     conn: duckdb.DuckDBPyConnection,
-) -> tuple[dict[tuple[str, str], str], dict[str, str], dict[str, str]]:
-    """(code, name) → sku and code → sku for the stock sheet; name → sku for cost."""
+) -> tuple[dict[tuple[str, str], str], dict[str, str], dict[tuple[str, str], str]]:
+    """(code, name) → sku and code → sku for the stock sheet; (code, name) → sku for
+    cost (code ``''`` or ``row:<n>``, see ``_cost_codes``)."""
     rows = conn.execute(
         "SELECT source_type, raw_code, raw_name, sku_id FROM sku_aliases "
         "WHERE status IN ('auto_accepted', 'confirmed') AND sku_id IS NOT NULL"
     ).fetchall()
     inv: dict[tuple[str, str], str] = {}
     inv_code: dict[str, str] = {}
-    cost: dict[str, str] = {}
+    cost: dict[tuple[str, str], str] = {}
     for src, code, name, sku in rows:
         if src == "inventory":
             inv[(str(code), str(name))] = str(sku)
             inv_code.setdefault(str(code), str(sku))
         elif src == "cost":
-            cost[str(name)] = str(sku)
+            cost[(str(code), str(name))] = str(sku)
     return inv, inv_code, cost
 
 
@@ -559,11 +591,22 @@ def _map_inventory(
     return held
 
 
-def _map_cost(norm: NormFrame, cost: dict[str, str]) -> int:
+def _map_cost(norm: NormFrame, cost: dict[tuple[str, str], str]) -> int:
     df = norm.tables.get("cost_items")
     if df is None or not len(df):
         return 0
-    df = df.assign(sku_id=df["src_raw_name"].astype(str).map(cost))
+    si = norm.source_items
+    code_of = dict(
+        zip(
+            si["raw_code"].astype(str),
+            _cost_codes(si["raw_name"], si["raw_code"]),
+            strict=True,
+        )
+    )
+    names = df["src_raw_name"].astype(str)
+    codes = df["src_raw_code"].astype(str).map(code_of).fillna("")
+    sku = pd.Series([cost.get(k) for k in zip(codes, names, strict=True)], index=df.index)
+    df = df.assign(sku_id=sku)
     held = int(df["sku_id"].isna().sum())
     norm.tables["cost_items"] = df[df["sku_id"].notna()]
     return held
@@ -662,6 +705,67 @@ def _earliest_hour(items: Sequence[_Item]) -> datetime | None:
     first = min(cands)
     first = first.tz_localize("UTC") if first.tzinfo is None else first.tz_convert("UTC")
     return floor_hour(first.to_pydatetime())
+
+
+def _panel_start(
+    conn: duckdb.DuckDBPyConnection, items: Sequence[_Item], touched: set[str]
+) -> tuple[bool, datetime | None]:
+    """First hour whose panel row may change, for the touched SKUs (live delta).
+
+    Beyond the hours of the new rows (``_earliest_hour``) a new row also changes:
+
+    * the whole VN day of a new order (price = median of the day, 02 §6.3);
+    * the stock segment it falls in, back to the last valid snapshot at or before it
+      (the mismatch at the next snapshot is spread over the segment), and any receipt
+      of that day (its hour is re-placed using the day's snapshots) — covered by the
+      VN midnight unless the snapshot before is older;
+    * the ads hole right before a campaign's new rows (``ADS_LAG`` becomes
+      ``ADS_MISSING_HOUR``/``ADS_GAP_DAY``).
+
+    Returns ``(found, start)``; ``start`` None with ``found`` = rebuild the whole
+    history of the touched SKUs."""
+    base = _earliest_hour(items)
+    if base is None:
+        return False, None
+    cands = [pd.Timestamp(base).tz_convert(VN_TZ).normalize().tz_convert("UTC").to_pydatetime()]
+    skus = sorted(touched)
+    if skus:
+        rows = conn.execute(
+            "SELECT sku_id, max(snapshot_at) FILTER (WHERE snapshot_at <= ?) "
+            "FROM inventory_snapshots "
+            "WHERE on_hand IS NOT NULL AND sku_id IN (SELECT unnest(?)) GROUP BY 1",
+            [base, skus],
+        ).fetchall()
+        for _, before in rows:
+            if before is None:  # only snapshots after the change: the walk runs backwards
+                return True, None
+            cands.append(_utc(before) or base)
+    firsts: dict[str, datetime] = {}
+    for it in items:
+        ads = it.norm.tables.get("ad_hourly") if it.norm is not None else None
+        if ads is None or ads.empty:
+            continue
+        for cid, first in ads.groupby("campaign_id")["hour_utc"].min().items():
+            t = _utc(first)
+            if t is not None and (str(cid) not in firsts or t < firsts[str(cid)]):
+                firsts[str(cid)] = t
+    if firsts:
+        cids = sorted(firsts)
+        rows = conn.execute(
+            "SELECT n.cid, (SELECT max(a.hour_utc) FROM ad_hourly a "
+            "  WHERE a.campaign_id = n.cid AND a.hour_utc < n.first), "
+            "(SELECT c.started_at FROM campaigns c WHERE c.campaign_id = n.cid) "
+            "FROM (SELECT unnest(?) AS cid, unnest(?) AS first) n",
+            [cids, [firsts[c] for c in cids]],
+        ).fetchall()
+        for _, prev, started in rows:
+            if prev is not None:
+                cands.append((_utc(prev) or base) + timedelta(hours=1))
+            elif started is not None:
+                cands.append(floor_hour(_utc(started) or base))
+            else:
+                return True, None
+    return True, min(cands)
 
 
 def _publish(bus: EventBus | None, events: Sequence[Event]) -> None:
@@ -943,10 +1047,13 @@ def _rebuild_panel(
 ) -> PanelBuildResult:
     if mode == "history":
         return build_hourly_panel(conn)
-    # Live: touched SKUs from the first affected hour; if the data horizon moved,
-    # the other SKUs only need the new hours.
+    # Live: touched SKUs from the first affected hour (``_panel_start``); if the data
+    # horizon moved, the other SKUs only need the new hours. The panel computes only
+    # the hours that influence what it writes (window mode, PNL-04).
     prev_end = _utc(_scalar(conn, "SELECT max(hour_utc) + INTERVAL 1 HOUR FROM hourly_panel"))
-    start = _earliest_hour(items)
+    found, start = _panel_start(conn, items, touched)
+    if not found:
+        start = None
     if prev_end is not None and start is not None:
         start = min(start, prev_end)
     res = build_hourly_panel(conn, sorted(touched) or None, start=start)

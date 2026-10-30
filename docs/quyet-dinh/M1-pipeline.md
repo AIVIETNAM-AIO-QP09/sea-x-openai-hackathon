@@ -14,7 +14,7 @@ Mỗi mục ghi: vấn đề, lựa chọn, lý do, ảnh hưởng.
 | Lỗi cài sẵn bắt được | 12/12 | 12/12 | ✓ |
 | `hourly_panel` | 300 SKU × 2.880 giờ = 864.000 dòng | 300 × 2.880 | ✓ |
 | PII trong DuckDB | 0 ô khớp (tên, địa chỉ, số điện thoại) ở mọi cột văn bản; 0 lần thấy chuỗi PII trong file DuckDB | 0 | ✓ |
-| PNL-04: nạp 1 giờ live | 2,2–2,5 giây khi máy rảnh; 6,2–7,5 giây khi máy đang chạy song song việc khác (xem §14) | < 5 giây | lúc đạt lúc không |
+| PNL-04: nạp 1 giờ live | đợt 2: 2,2–2,5 giây máy rảnh, 6,2–7,5 giây máy bận. **Sau "Hoàn thiện M1": p50 1,5–2,6 · p95 3,3–4,3 giây khi máy bận** (§21) | < 5 giây | ✓ |
 
 Ngoài tiêu chí M1 (02 §8): tồn cuối ngày khớp tuyệt đối 100 %; cờ hết hàng recall 100 % trên `het_hang`, precision/recall 99,6 %/99,9 % theo định nghĩa so được; gợi ý đầu đúng 99,3 %; số bán theo ngày khớp tuyệt đối tới 08/11, nhưng ngày 10/11 lệch 2,2 % so với ngưỡng 2 % (§18).
 
@@ -24,7 +24,7 @@ Ngoài tiêu chí M1 (02 §8): tồn cuối ngày khớp tuyệt đối 100 %; c
 - **Lựa chọn:** chạy theo thứ tự: batch → nhận diện + adapter → ghi đơn/danh mục/chiến dịch/sale → ghép SKU → gán `sku_id` → ghi ads/tồn/giá vốn → issue của adapter (theo batch) + luật dẫn xuất (tính lại trên toàn kho) → panel → sự kiện. Mọi lệnh ghi (trừ panel) nằm trong một transaction. Panel tự mở transaction riêng, mà DuckDB không cho lồng transaction.
 - **Ảnh hưởng:** một file lỗi giữa chừng thì cả lượt rollback. Panel chạy sau khi commit.
 
-## 2. Khóa alias giá vốn dùng `raw_code = ''`, không dùng `row:<n>`
+## 2. Khóa alias giá vốn dùng `raw_code = ''`, không dùng `row:<n>` (đã thay ở §21.2)
 
 - **Vấn đề:** adapter giá vốn đặt `source_items.raw_code = "row:<dòng>"` (M1-adapter §8). Trong khi đó `sku_matching` coi alias có `raw_code` là "nguồn có mã": nguồn này chạy trước, và luật tên viết tắt mơ hồ (`shorthand`) bị bỏ qua. ING-08 đã chỉnh và kiểm với `raw_code = ''` (M1-ghep-sku Q5, Q6).
 - **Lựa chọn:** pipeline dựng `AliasRecord(source_type="cost", raw_code="", raw_name=…, price=…)` và gán `sku_id` cho `cost_items` theo tên (`src_raw_name`). Không sửa adapter và cũng không sửa thuật toán ghép.
@@ -126,7 +126,7 @@ Ba trường hợp đã gặp khi chạy thật:
   | Máy rảnh | 2,2–2,5 giây | 1,5–1,7 giây | 0,25–0,3 giây | khoảng 0,25 giây |
   | Máy đang chạy song song việc khác | 6,2–7,5 giây | 4,8–5,5 giây | 0,7–0,9 giây | khoảng 0,4 giây |
 
-- **Hướng tối ưu (chưa làm):** `compute_hourly_panel` luôn tính trên toàn lưới từ đầu lịch sử, nên chi phí của một giờ live ≈ dựng lại toàn bộ panel cho 300 SKU. Nên thêm chế độ cửa sổ:
+- **Hướng tối ưu (đã làm ở §21.1):** `compute_hourly_panel` luôn tính trên toàn lưới từ đầu lịch sử, nên chi phí của một giờ live ≈ dựng lại toàn bộ panel cho 300 SKU. Nên thêm chế độ cửa sổ:
   - tính từ snapshot hợp lệ cuối cùng trước `start` lùi thêm 168 giờ (cửa sổ 7 ngày của tỷ trọng ads và `low_stock`);
   - mang giá `carried_forward` cuối cùng vào đầu cửa sổ;
   - giữ nguyên cách gọi `build_hourly_panel(sku_ids, start)`.
@@ -177,3 +177,108 @@ Ba trường hợp đã gặp khi chạy thật:
 ## 20. Làm việc song song
 
 Trong lúc làm đợt này có các file `backend/app/forecast/*`, `backend/eval/eval_forecast.py`, `backend/tests/unit/forecast/` (chưa track) đang được viết ở chỗ khác. Đợt này không sửa chúng. Lỗi `ruff`/`ruff format`/`mypy` còn lại đều nằm trong các file đó. Một lần chạy `ruff format eval` của đợt này có thể đã định dạng lại `eval/eval_forecast.py` (chỉ đổi định dạng, không đổi nội dung).
+
+## 21. Hoàn thiện M1
+
+Đợt này làm nốt hai việc còn treo của M1 (§2, §14) rồi chấm lại toàn bộ tiêu chí.
+
+### 21.1 PNL-04: panel theo cửa sổ
+
+**Vấn đề.** `compute_hourly_panel` luôn tính trên toàn lưới từ 14/07, nên một giờ live tốn gần bằng dựng lại panel 300 SKU. Ngoài ra, khi so panel sau mỗi giờ live với bản dựng toàn bộ, phát hiện khoảng ghi của pipeline (§14) **sót ô** ngay cả khi chưa có cửa sổ (trên `nho`, sau giờ 6: 13 ô `eff_price` và 72 ô `data_flags` sai):
+- giá là trung vị **cả ngày**, nên đơn mới làm đổi giá của các giờ trước trong cùng ngày;
+- dòng ads mới lấp lỗ ads cuối lịch sử: 3 giờ trễ trước đó phải đổi từ `ADS_LAG` sang `ADS_MISSING_HOUR`.
+
+**Lựa chọn.** Tách hai việc:
+
+1. **Khoảng ghi** (pipeline, `_panel_start`). Lấy giờ sớm nhất của dòng mới, rồi lùi về mốc sớm nhất trong ba mốc sau:
+   - nửa đêm VN của ngày đó;
+   - snapshot hợp lệ cuối cùng ≤ mốc đó của các SKU bị chạm (sai lệch ở snapshot sau được rải cho cả đoạn);
+   - đầu lỗ ads ngay trước dòng ads mới của mỗi chiến dịch.
+
+   Nếu một SKU chỉ có snapshot sau mốc (đoạn đầu phải đi ngược), dựng lại toàn bộ lịch sử cho các SKU bị chạm. Tập SKU giữ như cũ: SKU bị chạm, đóng theo combo/thành phần và chiến dịch. SKU khác chỉ ghi phần giờ mới.
+2. **Khoảng tính** (panel, `window=True` mặc định khi có `start`). Lưới tính bắt đầu từ nửa đêm VN trước mốc sớm nhất của:
+   - `start − 168 giờ` (tổng 7 ngày cho tỷ trọng ads và `low_stock`);
+   - với mỗi SKU có tồn: snapshot hợp lệ cuối cùng ≤ `start` mà **không nằm giữa ngày của một phiếu nhập**. Từ snapshot đó trở đi, bước đi tồn không phụ thuộc gì phía trước, và không phiếu nhập nào bị cắt đôi (giờ nhập được đặt theo các snapshot trong ngày).
+
+   Trạng thái vắt qua đầu cửa sổ được mang vào tường minh:
+   - `prior_missing`: số giờ ads thiếu liền trước cửa sổ, để lỗ dài ≥ 20 giờ vẫn là `ADS_GAP_DAY`;
+   - giá mang theo: một dòng "giả quan sát" ngày trước cửa sổ, với giá hiệu lực cuối và giá niêm yết cuối. Thường lấy trung vị của ngày bán cuối bằng một truy vấn. Nếu có `committed_price` trước cửa sổ thì tính lại đầy đủ.
+
+   `window=False` vẫn đi toàn lịch sử (dùng trong test).
+3. **Tối ưu kèm theo** (kết quả không đổi):
+   - `build_price_events` vector hóa: 0,57 → 0,04 giây trên demo đầy đủ. Đã so khớp từng dòng với bản cũ, cả ca giá cam kết và giá dự phòng;
+   - vòng lặp trong của `quality.check_stock_jump` dùng mảng numpy thay cho `Timestamp` từng phần tử;
+   - truy vấn lỗ ads gộp làm một.
+
+**Kiểm chứng (so từng ô, bỏ `panel_version`, gồm cả `price_events`).**
+- `nho`: nạp lần lượt 24 giờ live 11.11, sau mỗi giờ panel trong DB **bằng hệt** bản dựng toàn bộ. Cũng bằng hệt khi nhảy giờ (0, 1, 2, 5, 9, 10, 15, 23) và khi replay chạy lại từ đầu. Có test `tests/integration/test_live_delta.py::test_hour_by_hour_panel_equals_full_rebuild`.
+- `demo`: các giờ 0, 1, 2, 3, 7, 12 bằng hệt. Test e2e `test_ingest_demo.py` kiểm các giờ 0, 1, 2, 5.
+- `tests/unit/panel/test_panel_window.py` có 5 mốc `start` trên lịch sử `nho`: trong ngày mất ads 20/09, giờ nhập hàng, giờ trễ ads cuối, tập con SKU. Có thêm một bản `nho` sửa tay để trạng thái vắt qua đầu cửa sổ: giá cam kết trước cửa sổ, lỗ ads 30 giờ cắt ngang đầu cửa sổ, phiếu nhập đúng ngày mở cửa sổ. Test cũng kiểm số giờ tính chỉ còn khoảng 7–8 ngày trước `start`.
+
+**Số đo trên demo (một giờ live ≈ 17–410 đơn + 299 dòng tồn + 49 dòng ads; 24 giờ).** Máy dev Windows 16 luồng đang chạy song song 2–3 agent khác (dự báo M2, `demo_whatif --scan`). CPU tổng 10–25 %, có lúc dồn cục. Bước `normalize` chậm 2–4 lần so với lúc rảnh (66 ms → 180–300 ms). Để so công bằng, đo **xen kẽ** trên hai bản sao DB (giờ chẵn A trước, giờ lẻ B trước). B = panel toàn lịch sử (`window=False`) + vòng lặp giá cũ. Giờ 0 không tính vào p50/p95.
+
+| Lần đo | Mới (cửa sổ) p50 / p95 / tối đa | Cũ (toàn lịch sử) p50 / p95 / tối đa |
+|---|---|---|
+| A/B lần 1 | 1,52 / 4,32 / 5,90 giây | 2,90 / 9,62 / 11,90 giây |
+| A/B lần 2 (máy bận hơn) | 2,62 / 3,29 / 3,32 giây | 6,64 / 9,78 / 11,71 giây |
+| `eval_data --live-hours 24` (máy bận: nạp lịch sử 39 giây, bình thường 14 giây) | 3,43 / 4,21 / 4,81 giây | — |
+| A/B lần 1, giờ 2–12 (máy ít bận) | 1,2–1,6 giây | 2,5–2,9 giây |
+
+- Panel một giờ live còn 0,5–0,6 giây khi rảnh và 1,0–1,4 giây khi bận (trước: 1,5–2,1 và 4,8–5,5). Phần còn lại:
+  - kiểm lỗi 0,35–1,0 giây;
+  - mở file trên Windows khoảng 9 ms/lần × 27 lần, có thể do quét virus file tạm;
+  - các bước nạp nhỏ.
+- Lần 1 có một đỉnh 5,9 giây (giờ 15). Lúc đó bản cũ chạy xen kẽ cũng nhảy lên 9,6–11,9 giây, và thời gian CPU của chính tiến trình tăng theo, nên đây là tranh chấp máy chứ không phải cửa sổ to ra. Ngoài đỉnh đó, mọi lần đo đều dưới 5 giây.
+- Có test đo thời gian `tests/e2e/test_ingest_demo.py::test_demo_live_hour_under_5_seconds`, gắn marker `perf` (chạy riêng khi máy rảnh: `pytest -m perf`). Lần chạy trong đợt này đạt.
+- Mục tiêu 2 giây của 02 §6.4 đạt khi máy rảnh (p50 ≈ 1,2–1,5 giây). Khi máy bận chỉ đạt p50 ở lần đo 1.
+
+**Ảnh hưởng.**
+- Chữ ký `build_hourly_panel(sku_ids, start, end)` giữ nguyên, chỉ thêm `window: bool = True`. `allocate_ad_spend` thêm `prior_missing`. `stock.DAY_HOURS` là hằng mới.
+- Nếu sau này có nguồn ảnh hưởng giờ cũ theo cách khác (ví dụ đơn đổi trạng thái muộn), phải thêm mốc tương ứng vào `_panel_start`. Test so từng ô sau mỗi giờ live sẽ bắt được nếu sót.
+
+### 21.2 Tách các dòng giá vốn cùng tên khác giá
+
+**Vấn đề.** Theo §2, demo có 4 cặp dòng cùng tên, mỗi cặp bị gộp thành một alias `duplicate_raw_name`, nên người dùng chỉ chọn được một SKU cho cả hai dòng.
+
+**Lựa chọn.**
+- Adapter vốn đã ghi `row:<dòng>` (M1-adapter §8). `sku_matching` thêm `ROW_CODE_PREFIX` và `has_code()`: mã `row:` được coi là "không có mã" ở mọi chỗ trước đây xét `raw_code`:
+  - nguồn có mã chạy trước;
+  - thu thập tên viết tắt mơ hồ;
+  - luật tên viết tắt;
+  - khớp mã chính xác;
+  - nhóm gốc mã, `code_pattern`.
+
+  Luật tên viết tắt giữ nguyên. Có test: không có sheet tồn thì dòng giá vốn tự động; có sheet tồn dùng tên đó cho 2 mã thì về hàng chờ, cả khi mã là `''` lẫn `row:`.
+- **Tự quyết:** chỉ dòng có tên **lặp lại trong file** mới giữ `row:<n>` làm khóa alias (`pipeline._cost_codes`). Tên duy nhất vẫn dùng khóa `(cost, '', tên)`. Lý do: số dòng đổi khi shop chèn hoặc xóa dòng ở bản file sau. Nếu mọi alias đều gắn số dòng, xác nhận của người dùng sẽ mất ở lần nhập tới. Như vậy mỗi dòng vẫn là một alias riêng, còn khóa của tên duy nhất ổn định. `cost_items` được gán SKU theo cùng khóa `(mã, tên)`.
+- DB cũ còn alias gộp `(cost, '', tên)` ở trạng thái `pending` cho tên đã tách: được xóa khi nạp lại. Alias đã có quyết định của người dùng thì không bao giờ xóa.
+- `eval_data` thêm đáp án theo khóa `row:<dòng>`: đúng SKU của dòng đó, thay vì tập SKU của cả cặp.
+
+**Kết quả trên demo.**
+- 282 alias giá vốn (trước: 278). Tự động đúng 261 (= trước), sai 0.
+- Chờ xác nhận 21 (trước: 17). 4 alias gộp thành 8 alias, mỗi dòng một alias, đều `low_margin` với gợi ý 1–1 khác nhau ("Móc dán tường chịu lực - gói 3" → MOCDAN2-G3 / MOCDAN6-G3, "Nến thơm…", "Túi zip… gói 3", "Đèn bàn gỗ decor (mẫu").
+- Tỷ lệ tự động trên tổng giảm nhẹ do mẫu số tăng: mã nội bộ + giá vốn 97,1 % → 96,4 % (560/581), cả 3 nguồn 98,1 % → 97,6 %. Vẫn trên ngưỡng 90 %.
+- Gợi ý đầu đúng 99,3 %. Lỗi cài sẵn 12/12. `MISSING_COST`: 18/18 SKU thiếu thật, cộng 21 SKU có dòng giá vốn đang chờ (21 alias).
+
+### 21.3 Bảng tiêu chí M1 mới
+
+`uv run python -m eval.eval_data --size demo --live-hours 24`, ngày 30/10, máy bận như mô tả ở §21.1. Báo cáo: `backend/eval/reports/data_demo_20261030-1814.md`.
+
+| Tiêu chí M1 (12) | Kết quả | Ngưỡng | Đạt |
+|---|---|---|---|
+| Nạp 6 file lịch sử cỡ demo | 39,3 giây khi máy bận (lúc rảnh 14–15 giây, dựng base để đo ở §21.1) | < 60 giây | ✓ |
+| Ghép SKU tự động đúng (mã nội bộ + giá vốn) | 96,4 % (560/581); cả 3 nguồn 97,6 % | ≥ 90 % | ✓ |
+| Ghép SKU tự động sai | 0 % (0 alias, 0 nhầm biến thể) | ≤ 1 % | ✓ |
+| Gợi ý đầu đúng | 99,3 % | ≥ 97 % | ✓ |
+| Lỗi cài sẵn bắt được | 12/12 | 12/12 | ✓ |
+| `hourly_panel` | 300 SKU × 2.880 giờ = 864.000 dòng | 300 × 2.880 | ✓ |
+| PII trong DuckDB | bỏ 3/3 cột; 0 ô; 0 lần thấy chuỗi PII trong file | 0 | ✓ |
+| PNL-04: nạp 1 giờ live 11.11 | p50 3,43 · p95 4,21 · tối đa 4,81 giây / 24 giờ (máy bận); A/B xen kẽ p50 1,5–2,6, p95 3,3–4,3 giây | < 5 giây | ✓ |
+| Panel live = dựng toàn bộ | 0 ô lệch sau mỗi giờ (`nho` 24/24 giờ, `demo` 6 giờ) | bằng hệt | ✓ |
+
+Tiêu chí ngoài M1 (§18): số bán ngày 10/11 lệch 2,2 % vẫn như cũ, không nới ngưỡng.
+
+### 21.4 Chất lượng
+
+- `ruff check .`, `ruff format --check .`, `mypy app` (110 file) đều sạch, kể cả file của agent khác tại thời điểm chạy.
+- `pytest` xanh: `tests/unit/panel`, `tests/unit/ingest`, `tests/integration`, `tests/e2e/test_ingest_demo.py` (gồm test `perf`), `tests/unit/test_no_ground_truth_leak.py`, và phần còn lại của `tests/` (trừ `unit/forecast`, `unit/ai` của agent khác).
+- DuckDB thử nghiệm (`backend/data/m1-check*.duckdb`) đã xóa. Không đụng `eval/reports/whatif_full.*`.

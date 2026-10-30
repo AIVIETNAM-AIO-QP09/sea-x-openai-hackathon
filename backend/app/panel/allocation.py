@@ -21,6 +21,11 @@ Ad status per hour:
 
 A SKU listed in several campaigns gets the sum of its allocations; ``campaign_id``,
 ``ad_status`` and ``ad_alloc_share`` are those of its first campaign (by id).
+
+Windowed grids (PNL-04): when the grid starts after the beginning of history,
+``prior_missing[c]`` is the number of consecutive missing hours of campaign ``c``
+right before ``grid[0]``; a hole that crosses the window start is classified on its
+full length, so the flags match a build over the whole history.
 """
 
 from __future__ import annotations
@@ -77,7 +82,10 @@ def trailing_sum(units: npt.NDArray[np.int64], window: int = WINDOW_HOURS) -> Fl
 
 
 def _align_campaign(
-    grid: pd.DatetimeIndex, rows: pd.DataFrame, started_at: pd.Timestamp | None
+    grid: pd.DatetimeIndex,
+    rows: pd.DataFrame,
+    started_at: pd.Timestamp | None,
+    prior_missing: int = 0,
 ) -> CampaignHours:
     n = len(grid)
     status = np.full(n, None, dtype=object)
@@ -119,9 +127,10 @@ def _align_campaign(
         ends = np.concatenate([breaks + 1, [len(idx)]])
         for s, e in zip(starts, ends, strict=True):
             run = idx[s:e]
+            length = len(run) + (prior_missing if run[0] == 0 else 0)
             if run[0] > last:
                 flag[run] = FLAG_LAG
-            elif len(run) >= GAP_DAY_MIN_HOURS:
+            elif length >= GAP_DAY_MIN_HOURS:
                 flag[run] = FLAG_GAP_DAY
             else:
                 flag[run] = FLAG_MISSING_HOUR
@@ -136,9 +145,12 @@ def allocate_ad_spend(
     campaign_skus: dict[str, list[str]],
     ad_hourly: pd.DataFrame,
     started_at: dict[str, pd.Timestamp | None],
+    prior_missing: dict[str, int] | None = None,
 ) -> Allocation:
     """``units_gross``/``stockout``: (n_skus, n_hours) in ``sku_ids`` order on ``grid``.
-    ``ad_hourly``: columns campaign_id, hour_utc, status, spend, attributed_orders."""
+    ``ad_hourly``: columns campaign_id, hour_utc, status, spend, attributed_orders.
+    ``prior_missing``: see module docstring (windowed grids only)."""
+    prior = prior_missing or {}
     n_sku, n = units_gross.shape
     pos = {s: i for i, s in enumerate(sku_ids)}
     weights = (trailing_sum(units_gross) + 1.0) * (~stockout)
@@ -158,7 +170,12 @@ def allocate_ad_spend(
         members = [pos[s] for s in campaign_skus[cid] if s in pos]
         if not members:
             continue
-        ch = _align_campaign(grid, by_campaign.get(cid, ad_hourly.iloc[0:0]), started_at.get(cid))
+        ch = _align_campaign(
+            grid,
+            by_campaign.get(cid, ad_hourly.iloc[0:0]),
+            started_at.get(cid),
+            prior.get(cid, 0),
+        )
         hours_by_campaign[cid] = ch
         w = weights[members]
         tot = w.sum(axis=0)

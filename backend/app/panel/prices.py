@@ -52,27 +52,53 @@ def build_price_events(
         )
     if obs.empty:
         return pd.DataFrame(columns=PRICE_COLUMNS)
-    day_set = set(days)
-    obs = obs[obs["day_local"].isin(day_set)]
-    out = []
+    day_list = sorted(set(days))
+    obs = obs[obs["day_local"].isin(set(day_list))]
+    if obs.empty:
+        return pd.DataFrame(columns=PRICE_COLUMNS)
     fallback = fallback_list_price or {}
-    for sku, g in obs.groupby("sku_id", sort=True):
-        g = g.set_index("day_local").sort_index()
-        first = g.index.min()
-        idx = [d for d in days if d >= first]
-        f = g.reindex(idx)
-        src = f["source"].where(f["source"].notna(), "carried_forward")
-        f["eff_price"] = f["eff_price"].astype(float).ffill()
-        lp = f["list_price"].astype(float).ffill().bfill()
-        if lp.isna().all() and str(sku) in fallback:
-            lp = lp.fillna(float(fallback[str(sku)]))
-        f["list_price"] = lp.fillna(f["eff_price"])
-        f["source"] = src
-        f["sku_id"] = sku
-        out.append(f.reset_index(names="day_local"))
-    res = pd.concat(out, ignore_index=True)
+    # Vectorised over SKUs: SKU × day grid (sorted), forward fill inside each SKU, keep
+    # the days from the SKU's first known price on.
+    day_pos = {d: j for j, d in enumerate(day_list)}
+    skus = sorted(obs["sku_id"].unique())
+    sku_pos = {s: i for i, s in enumerate(skus)}
+    nd = len(day_list)
+    r = obs["sku_id"].map(sku_pos).to_numpy(dtype=np.int64)
+    c = obs["day_local"].map(day_pos).to_numpy(dtype=np.int64)
+    flat = r * nd + c
+    size = len(skus) * nd
+    eff = np.full(size, np.nan)
+    lst = np.full(size, np.nan)
+    src = np.full(size, None, dtype=object)
+    eff[flat] = obs["eff_price"].astype(float).to_numpy()
+    lst[flat] = obs["list_price"].astype(float).to_numpy()
+    src[flat] = obs["source"].to_numpy(dtype=object)
+    first = np.full(len(skus), nd, dtype=np.int64)
+    np.minimum.at(first, r, c)
+    sku_of = np.repeat(np.arange(len(skus)), nd)
+    day_of = np.tile(np.arange(nd), len(skus))
+    keep = day_of >= first[sku_of]
+    f = pd.DataFrame({"g": sku_of, "eff_price": eff, "list_price": lst})
+    g = f.groupby("g", sort=False)
+    eff_f = g["eff_price"].ffill().to_numpy()
+    lp_ff = pd.Series(np.where(keep, g["list_price"].ffill().to_numpy(), np.nan))
+    lp = lp_ff.groupby(sku_of, sort=False).bfill().to_numpy()
+    all_nan = np.asarray(~np.isfinite(lp).reshape(len(skus), nd).any(axis=1), dtype=bool)
+    fb = np.array([float(fallback.get(str(s), np.nan)) for s in skus])
+    lp = np.where(np.isnan(lp) & all_nan[sku_of], fb[sku_of], lp)
+    lp = np.where(np.isnan(lp), eff_f, lp)
+    src = np.where(pd.isna(src), "carried_forward", src)
+    res = pd.DataFrame(
+        {
+            "sku_id": np.array(skus, dtype=object)[sku_of[keep]],
+            "day_local": np.array(day_list, dtype=object)[day_of[keep]],
+            "list_price": lp[keep],
+            "eff_price": eff_f[keep],
+            "source": src[keep],
+        }
+    )
     res["eff_price"] = res["eff_price"].round().astype("int64")
     res["list_price"] = res["list_price"].round().astype("int64")
-    lp = res["list_price"].where(res["list_price"] > 0)
-    res["discount_pct"] = (1.0 - res["eff_price"] / lp).clip(0.0, 1.0).fillna(0.0)
+    pos_lp = res["list_price"].where(res["list_price"] > 0)
+    res["discount_pct"] = (1.0 - res["eff_price"] / pos_lp).clip(0.0, 1.0).fillna(0.0)
     return res[PRICE_COLUMNS]

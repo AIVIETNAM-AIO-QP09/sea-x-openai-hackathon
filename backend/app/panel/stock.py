@@ -50,6 +50,7 @@ BoolArr = npt.NDArray[np.bool_]
 ObjArr = npt.NDArray[np.object_]
 
 DEFAULT_RECEIPT_HOUR = 10  # VN local hour assumed for "Nhập {qty}" (plan 02 §6.1)
+DAY_HOURS = 24  # a receipt may land anywhere in [VN midnight, +24 h)
 SMALL_ERROR_ABS = 3
 SMALL_ERROR_REL = 0.05
 
@@ -136,7 +137,7 @@ def _place_receipts(
             pre[pos] += r.qty
             continue
         ws = r.ws - offset
-        lo, hi = max(ws, 0), min(ws + 24, n)
+        lo, hi = max(ws, 0), min(ws + DAY_HOURS, n)
         if lo >= hi:
             pre[min(max(ws, 0), n - 1)] += r.qty
             continue
@@ -204,8 +205,8 @@ def _pin_receipts(
     with the largest unexplained increase (v1 − v0 + sold)."""
     out: list[_Receipt] = []
     for ws, qty in receipts:
-        inside = [(k, v) for k, v in anchors if ws <= k <= ws + 24]
-        if not any(ws < k < ws + 24 for k, _ in inside) or len(inside) < 2:
+        inside = [(k, v) for k, v in anchors if ws <= k <= ws + DAY_HOURS]
+        if not any(ws < k < ws + DAY_HOURS for k, _ in inside) or len(inside) < 2:
             out.append(_Receipt(ws, qty))
             continue
         best_k, best_gain = None, -np.inf
@@ -227,7 +228,8 @@ def reconstruct_sku(inp: SkuStockInput) -> StockSeries:
     invalid = sorted(k for k, v in inp.anchors.items() if v is None and 0 < k < n)
     cons, need = inp.consumed, inp.need
     bounds = [k for k, _ in valid]
-    receipts = _pin_receipts([(ws, q) for ws, q in inp.receipts if -24 < ws < n], valid, cons)
+    in_grid = [(ws, q) for ws, q in inp.receipts if -DAY_HOURS < ws < n]
+    receipts = _pin_receipts(in_grid, valid, cons)
 
     by_seg: dict[int, list[_Receipt]] = {}
     for r in receipts:

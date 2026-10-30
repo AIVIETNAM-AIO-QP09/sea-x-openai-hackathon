@@ -14,10 +14,25 @@ Reads (names as in ``app/warehouse/schema.sql``):
 Writes ``hourly_panel`` (delete + insert of the rebuilt range, ordered by
 ``(sku_id, hour_utc)`` for DuckDB zone maps) and ``price_events``.
 
-The hour grid always starts at the VN midnight of the first order so stock walks
+The hour grid logically starts at the VN midnight of the first order so stock walks
 and the 7-day windows see the whole history; ``start``/``end`` only limit what is
 written. ``sku_ids`` is closed over combos/components and campaign co-members
 (their numbers depend on each other) and the closure is what gets written.
+
+Window mode (PNL-04, default when ``start`` is given): only the hours that can
+influence ``[start, end)`` are computed. The computed grid starts at the VN midnight
+on or before the earliest of
+
+* ``start − 168 h`` (trailing 7-day sums: ad shares, ``low_stock``);
+* for each stocked SKU, its last valid snapshot at or before ``start`` that does not
+  fall strictly inside the day of one of its receipts (the stock walk from that
+  anchor on does not depend on anything earlier, and no receipt crosses it).
+
+State that crosses the window start is carried in explicitly: the length of an ads
+hole that started before the window (``ADS_GAP_DAY`` vs ``ADS_MISSING_HOUR``) and the
+last known prices of each SKU (``carried_forward``). The rows written are therefore
+identical to a build over the whole history (tested cell by cell). A SKU with valid
+snapshots only after ``start`` falls back to the whole history.
 """
 
 from __future__ import annotations
@@ -41,6 +56,7 @@ from app.panel.allocation import (
     FLAG_GAP_DAY,
     FLAG_LAG,
     FLAG_MISSING_HOUR,
+    WINDOW_HOURS,
     Allocation,
     allocate_ad_spend,
     trailing_sum,
@@ -48,6 +64,7 @@ from app.panel.allocation import (
 from app.panel.prices import build_price_events
 from app.panel.stock import (
     CONF,
+    DAY_HOURS,
     SkuStockInput,
     StockSeries,
     combo_stock,
@@ -226,6 +243,150 @@ def _load_commitments(conn: duckdb.DuckDBPyConnection) -> tuple[pd.DataFrame, pd
     return prices.drop_duplicates(["sku_id", "day_local"], keep="last"), windows
 
 
+# ----------------------------------------------------------------- window (PNL-04)
+def _window_start(
+    full_start: pd.Timestamp,
+    write_from: pd.Timestamp,
+    g_end: pd.Timestamp,
+    snaps: pd.DataFrame,
+    rec: pd.DataFrame,
+    stocked: list[str],
+) -> pd.Timestamp:
+    """First hour that must be computed so rows from ``write_from`` on equal a build over
+    the whole history (see module docstring). ``full_start`` = no window possible."""
+    s_idx = int((write_from - full_start) // HOUR)
+    need = s_idx - WINDOW_HOURS
+    if need <= 0:
+        return full_start
+    n_full = int((g_end - full_start) // HOUR)
+    valid = snaps[snaps["on_hand"].notna() & snaps["sku_id"].isin(set(stocked))]
+    if valid.empty:
+        return max(full_start, _vn_midnight(full_start + need * HOUR))
+    k = ((pd.DatetimeIndex(valid["snapshot_at"]).tz_convert("UTC") - full_start) / HOUR).to_numpy(
+        dtype=float
+    )
+    on_grid = (np.floor(k) == k) & (k >= 0) & (k <= n_full)
+    anc = pd.DataFrame({"sku_id": valid["sku_id"].to_numpy()[on_grid], "k": k[on_grid]})
+    anc = anc.drop_duplicates()
+    has_any = set(anc["sku_id"])
+    cand = anc[anc["k"] <= s_idx]
+    if not rec.empty and not cand.empty:
+        mid = pd.DatetimeIndex(pd.to_datetime(rec["received_on"]).dt.tz_localize(VN_TZ)).tz_convert(
+            "UTC"
+        )
+        ws = pd.DataFrame(
+            {"sku_id": rec["sku_id"].to_numpy(), "ws": ((mid - full_start) // HOUR).to_numpy()}
+        )
+        both = cand.merge(ws, on="sku_id")
+        inside = both[(both["ws"] < both["k"]) & (both["k"] < both["ws"] + DAY_HOURS)]
+        if not inside.empty:  # a snapshot inside a receipt day cannot start the walk
+            bad = pd.MultiIndex.from_frame(inside[["sku_id", "k"]].drop_duplicates())
+            cand = cand[~pd.MultiIndex.from_frame(cand[["sku_id", "k"]]).isin(bad)]
+    picked = cand.groupby("sku_id")["k"].max()
+    if has_any - set(picked.index):  # snapshots only after start: the walk runs backwards
+        return full_start
+    if not picked.empty:
+        need = min(need, int(picked.min()))
+    if need <= 0:
+        return full_start
+    return max(full_start, _vn_midnight(full_start + need * HOUR))
+
+
+def _ads_prior_missing(
+    conn: duckdb.DuckDBPyConnection,
+    full_start: pd.Timestamp,
+    g_start: pd.Timestamp,
+    campaigns: list[str],
+    started: dict[str, pd.Timestamp | None],
+) -> dict[str, int]:
+    """Consecutive missing ads hours of each campaign right before ``g_start``."""
+    if g_start <= full_start or not campaigns:
+        return {}
+    last = {
+        str(c): _utc(h)
+        for c, h in conn.execute(
+            "SELECT campaign_id, max(hour_utc) FROM ad_hourly "
+            "WHERE hour_utc >= ? AND hour_utc < ? GROUP BY 1",
+            [full_start.to_pydatetime(), g_start.to_pydatetime()],
+        ).fetchall()
+    }
+    out: dict[str, int] = {}
+    for cid in campaigns:
+        run_start = full_start
+        if cid in last:
+            run_start = max(run_start, last[cid] + HOUR)
+        st = started.get(cid)
+        if st is not None:
+            run_start = max(run_start, _ceil_hour(st))
+        out[cid] = max(0, int((g_start - run_start) // HOUR))
+    return out
+
+
+def _price_seed(
+    conn: duckdb.DuckDBPyConnection,
+    full_start: pd.Timestamp,
+    g_start: pd.Timestamp,
+    commit_prices: pd.DataFrame,
+    pos: dict[str, int],
+) -> pd.DataFrame:
+    """One row per SKU on the day before the window: the prices carried into it
+    (last effective price, last observed list price, NaN when none yet)."""
+    cols = ["sku_id", "day_local", "list_price", "eff_price"]
+    if g_start <= full_start:
+        return pd.DataFrame(columns=cols)
+    first_day = full_start.tz_convert(VN_TZ).date()
+    d0 = g_start.tz_convert(VN_TZ).date()
+    com = commit_prices[
+        commit_prices["sku_id"].isin(pos)
+        & (commit_prices["day_local"] >= first_day)
+        & (commit_prices["day_local"] < d0)
+    ]
+    if com.empty:
+        # Usual case: the carried prices are the medians of the last selling day
+        # (order_lines prices are NOT NULL), no need to aggregate every day.
+        seed = _df(
+            conn,
+            """
+            WITH l AS (
+                SELECT ol.sku_id,
+                       CAST(timezone('Asia/Ho_Chi_Minh', o.ordered_at) AS DATE) AS d,
+                       ol.list_price, ol.unit_price
+                FROM orders o JOIN order_lines ol USING (order_id)
+                WHERE o.status <> 'cancelled' AND o.ordered_at >= ? AND o.ordered_at < ?
+            ), last AS (SELECT sku_id, max(d) AS d FROM l GROUP BY 1)
+            SELECT l.sku_id, median(l.list_price) AS list_price,
+                   median(l.unit_price) AS eff_price
+            FROM l JOIN last USING (sku_id, d) GROUP BY 1 ORDER BY 1
+            """,
+            [full_start.to_pydatetime(), g_start.to_pydatetime()],
+        )
+        seed = seed[seed["sku_id"].isin(pos)].reset_index(drop=True)
+        seed["day_local"] = d0 - timedelta(days=1)
+        seed["list_price"] = seed["list_price"].astype(float)
+        seed["eff_price"] = seed["eff_price"].astype(float)
+        return seed[cols]
+    obs = _load_daily_prices(conn, full_start, g_start)
+    obs = obs[obs["sku_id"].isin(pos)]
+    com_keys = set(zip(com["sku_id"], com["day_local"], strict=True))
+    kept = obs[[k not in com_keys for k in zip(obs["sku_id"], obs["day_local"], strict=True)]]
+    eff = pd.concat(
+        [
+            kept[["sku_id", "day_local", "eff_price"]],
+            com.rename(columns={"value_int": "eff_price"})[["sku_id", "day_local", "eff_price"]],
+        ],
+        ignore_index=True,
+    )
+    eff["eff_price"] = eff["eff_price"].astype(float)
+    eff = eff.dropna(subset=["eff_price"]).sort_values(["sku_id", "day_local"])
+    if eff.empty:
+        return pd.DataFrame(columns=cols)
+    lst = kept.dropna(subset=["list_price"]).sort_values(["sku_id", "day_local"])
+    seed = eff.groupby("sku_id", sort=True)["eff_price"].last().to_frame()
+    seed["list_price"] = lst.groupby("sku_id")["list_price"].last().astype(float)
+    seed["day_local"] = d0 - timedelta(days=1)
+    return seed.reset_index()[cols]
+
+
 # ----------------------------------------------------------------- compute
 def compute_hourly_panel(
     conn: duckdb.DuckDBPyConnection,
@@ -234,8 +395,12 @@ def compute_hourly_panel(
     end: datetime | None = None,
     *,
     panel_version: str | None = None,
+    window: bool = True,
 ) -> PanelFrames | None:
-    """Compute the panel without writing. ``None`` when there are no orders yet."""
+    """Compute the panel without writing. ``None`` when there are no orders yet.
+
+    ``window`` (only with ``start``): compute just the hours that influence the rows
+    written (module docstring); ``False`` walks the whole history (same result)."""
     rng = default_range(conn)
     if rng is None:
         return None
@@ -244,9 +409,8 @@ def compute_hourly_panel(
         g_end = _ceil_hour(_utc(end))
     if start is not None:
         g_start = min(g_start, _vn_midnight(_utc(start)))
+    full_start = g_start
     write_from = _utc(floor_hour(_utc(start).to_pydatetime())) if start is not None else g_start
-    grid = pd.date_range(g_start, g_end, freq="h", inclusive="left", tz="UTC")
-    n = len(grid)
 
     sku_rows = _df(conn, "SELECT sku_id, is_bundle, list_price FROM skus ORDER BY sku_id")
     all_skus = [str(s) for s in sku_rows["sku_id"]]
@@ -266,6 +430,17 @@ def compute_hourly_panel(
     skus = _closure(sku_ids, all_skus, bundles, campaign_skus) if sku_ids is not None else all_skus
     pos = {s: i for i, s in enumerate(skus)}
     m = len(skus)
+
+    snaps = _df(conn, "SELECT sku_id, snapshot_at, on_hand FROM inventory_snapshots")
+    rec = _df(
+        conn,
+        "SELECT sku_id, received_on, SUM(qty) AS qty FROM restock_receipts GROUP BY 1, 2",
+    )
+    if window and start is not None and write_from > g_start:
+        stocked = [s for s in skus if not (s in bundles or bundle_flag.get(s, False))]
+        g_start = _window_start(full_start, write_from, g_end, snaps, rec, stocked)
+    grid = pd.date_range(g_start, g_end, freq="h", inclusive="left", tz="UTC")
+    n = len(grid)
 
     # ---- units per SKU × hour
     def mat(dtype: Any = np.int64) -> npt.NDArray[Any]:
@@ -290,12 +465,9 @@ def compute_hourly_panel(
     taken = u_gross + u_canc
 
     # ---- stock
-    snaps = _df(conn, "SELECT sku_id, snapshot_at, on_hand FROM inventory_snapshots")
-    rec = _df(
-        conn,
-        "SELECT sku_id, received_on, SUM(qty) AS qty FROM restock_receipts GROUP BY 1, 2",
-    )
     anchors: dict[str, dict[int, int | None]] = {}
+    if g_start > full_start and not snaps.empty:
+        snaps = snaps[pd.DatetimeIndex(snaps["snapshot_at"]).tz_convert("UTC") >= g_start]
     if not snaps.empty:
         k = (pd.DatetimeIndex(snaps["snapshot_at"]).tz_convert("UTC") - g_start) / HOUR
         for sid, kk, v in zip(snaps["sku_id"], k, snaps["on_hand"], strict=True):
@@ -385,7 +557,10 @@ def compute_hourly_panel(
         for c, t in zip(camp["campaign_id"], camp["started_at"], strict=True)
     }
     sel_campaigns = {c: [s for s in members if s in pos] for c, members in campaign_skus.items()}
-    alloc = allocate_ad_spend(grid, skus, u_gross, stockout, sel_campaigns, ads, started)
+    prior = _ads_prior_missing(
+        conn, full_start, g_start, sorted(c for c, v in sel_campaigns.items() if v), started
+    )
+    alloc = allocate_ad_spend(grid, skus, u_gross, stockout, sel_campaigns, ads, started, prior)
     bits |= np.where(alloc.flag == FLAG_GAP_DAY, bit[ps.FLAG_ADS_GAP_DAY], 0)
     bits |= np.where(alloc.flag == FLAG_MISSING_HOUR, bit[ps.FLAG_ADS_MISSING_HOUR], 0)
     bits |= np.where(alloc.flag == FLAG_LAG, bit[ps.FLAG_ADS_LAG], 0)
@@ -420,12 +595,19 @@ def compute_hourly_panel(
 
     observed = _load_daily_prices(conn, g_start, g_end)
     observed = observed[observed["sku_id"].isin(pos)]
-    prices = build_price_events(
-        observed,
-        days,
-        commit_prices[commit_prices["sku_id"].isin(pos)],
-        fallback_lp,
-    )
+    commit_sel = commit_prices[commit_prices["sku_id"].isin(pos)]
+    seed = _price_seed(conn, full_start, g_start, commit_prices, pos)
+    if seed.empty:
+        prices = build_price_events(observed, days, commit_sel, fallback_lp)
+    else:
+        # Prices carried into the window ride on a pseudo-observation the day before.
+        prices = build_price_events(
+            pd.concat([seed, observed], ignore_index=True),
+            [days[0] - timedelta(days=1), *days],
+            commit_sel[commit_sel["day_local"] >= days[0]],
+            fallback_lp,
+        )
+        prices = prices[prices["day_local"] >= days[0]].reset_index(drop=True)
     lp_d = np.full((m, len(days)), np.nan)
     ep_d = np.full((m, len(days)), np.nan)
     dc_d = np.full((m, len(days)), np.nan)
@@ -570,12 +752,16 @@ def build_hourly_panel(
     end: datetime | None = None,
     *,
     panel_version: str | None = None,
+    window: bool = True,
 ) -> PanelBuildResult:
     """Rebuild ``hourly_panel`` for ``sku_ids`` (None = all, closed over combos and
     campaign co-members) and hours ``[start, end)`` (None = whole history / up to
-    ``as_of``). Also refreshes ``price_events``. Idempotent."""
+    ``as_of``). Also refreshes ``price_events``. Idempotent. With ``start``, only the
+    hours that influence ``[start, end)`` are computed (``window``, PNL-04)."""
     t0 = time.perf_counter()
-    frames = compute_hourly_panel(conn, sku_ids, start, end, panel_version=panel_version)
+    frames = compute_hourly_panel(
+        conn, sku_ids, start, end, panel_version=panel_version, window=window
+    )
     if frames is None:
         now = utcnow()
         return PanelBuildResult(

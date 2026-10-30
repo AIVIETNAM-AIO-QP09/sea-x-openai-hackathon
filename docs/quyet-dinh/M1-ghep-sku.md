@@ -48,7 +48,7 @@ File: `backend/app/ingest/sku_matching.py`, test `backend/tests/unit/ingest/test
 - Alias tồn cùng gốc mã (`GD0053-*`) mà trỏ nhiều `product_id` → hạ cả nhóm về `pending` (`code_group_conflict`).
 
 ### Q6. Trùng khóa alias
-- `UNIQUE (source_type, raw_code, raw_name)` gộp 2 dòng giá vốn cùng tên (vd hai dòng "Móc dán tường chịu lực - gói 3" của hai mẫu, giá khác nhau) thành 1 alias. Khi cùng khóa mà khác giá, alias luôn `pending` (`duplicate_raw_name`). Demo có 4 trường hợp (282 dòng → 278 alias).
+- `UNIQUE (source_type, raw_code, raw_name)` gộp 2 dòng giá vốn cùng tên (vd hai dòng "Móc dán tường chịu lực - gói 3" của hai mẫu, giá khác nhau) thành 1 alias. Khi cùng khóa mà khác giá, alias luôn `pending` (`duplicate_raw_name`). Demo có 4 trường hợp (282 dòng → 278 alias). **Cập nhật (M1-pipeline §21.2):** dòng trùng tên nay mang `row:<n>` nên thành alias riêng (282 alias). Luật `duplicate_raw_name` chỉ còn áp khi một nguồn thật sự gửi trùng khóa.
 
 ### Q7. Ghi DB
 - `alias_id = "sal-" + sha1(nguồn, mã, tên)[:20]`: tất định nên nạp lại ra cùng id (không dùng ULID vì alias có khóa tự nhiên).
@@ -57,6 +57,6 @@ File: `backend/app/ingest/sku_matching.py`, test `backend/tests/unit/ingest/test
 
 ## Đề xuất ngoài phạm vi
 - `sku_aliases` không có chỗ lưu top 3 ứng viên cho `GET /ingest/sku-queue`: hoặc thêm cột `candidates JSON` (migration), hoặc API tính lại bằng `resolve`.
-- Khóa alias không phân biệt được 2 dòng giá vốn cùng tên khác giá: cân nhắc cho adapter giá vốn ghi `raw_code = "row:<n>"` hoặc thêm giá vào khóa.
+- ~~Khóa alias không phân biệt được 2 dòng giá vốn cùng tên khác giá~~. Đã làm: dòng trùng tên mang `raw_code = "row:<n>"`, và `has_code()` coi `row:` là không có mã (M1-pipeline §21.2). Demo: 282 alias giá vốn, 21 chờ, 0 sai.
 - `ABBREV` nên đọc từ `parameters` (`alias_abbreviations`) — `MatchConfig.abbreviations` đã sẵn chỗ truyền vào.
 - Các pydantic model nên chuyển sang `app/ingest/schemas.py` khi package có file đó.
