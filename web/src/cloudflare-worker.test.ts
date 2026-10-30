@@ -70,6 +70,8 @@ describe('isolated city frontend service', () => {
       '/mock-data',
       '/_next/static/app.js',
       '/api/auth/login',
+      '/api/pm/models',
+      '/api/pm/chat',
     ]) {
       const response = await worker.fetch(
         new Request(`https://example.test${path}`),
