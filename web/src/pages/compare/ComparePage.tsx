@@ -48,7 +48,7 @@ const DRAG_SAMPLES = 300;
 const RELEASE_SAMPLES = 1000;
 const DEBOUNCE_MS = 250;
 /** Hand-written fixture cases (CompareIndexPage examples); the rest is an API snapshot. */
-const ILLUSTRATIVE_RECS = new Set(['rec-540', 'rec-510']);
+const ILLUSTRATIVE_RECS = new Set(['rec-510']);
 
 function CompareSkeleton() {
   return (
@@ -377,7 +377,6 @@ export function CompareIndexPage() {
   const p = t.pick;
   const examples = [
     { to: '/campaign/CD002/compare', label: p.exampleItems.fryer1111 },
-    { to: '/campaign/CD002/compare?rec=rec-540', label: p.exampleItems.fryerNormalDay },
     { to: '/campaign/VIDU-T10/compare?rec=rec-510', label: p.exampleItems.page10 },
   ];
   return (

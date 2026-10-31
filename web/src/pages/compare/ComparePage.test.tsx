@@ -87,14 +87,7 @@ describe('Compare screen · CD002 on 11.11 (API snapshot fixture)', () => {
   });
 });
 
-describe('Compare screen · two more ZoneBar examples (fixture)', () => {
-  it('normal day: continue wins', async () => {
-    renderAt('/campaign/CD002/compare?rec=rec-540');
-    expect(await screen.findByText('Tiếp tục. Lợi hơn giảm ngân sách 30% khoảng 0,51 triệu đ.')).toBeInTheDocument();
-    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Tiếp tục tốt hơn');
-    expect(screen.queryByText(/Phương án tốt hơn cả hai/)).not.toBeInTheDocument();
-  });
-
+describe('Compare screen · page-10 ZoneBar example (fixture)', () => {
   it('page-10 example: 22,5 undetermined → drag leftover value to 20.000đ → 16,5 pause better', async () => {
     renderAt('/campaign/VIDU-T10/compare?rec=rec-510');
     expect(await screen.findByText(/Chưa phân định giữa tạm dừng và tiếp tục/)).toBeInTheDocument();
@@ -118,7 +111,7 @@ describe('Compare entry and overview link', () => {
     expect(await screen.findByText('Ví dụ minh họa (dữ liệu mẫu)')).toBeInTheDocument();
     const links = screen.getAllByRole('link', { name: /Mở so sánh/ }).map((a) => a.getAttribute('href'));
     expect(links).toEqual(
-      expect.arrayContaining(['/campaign/CD002/compare', '/campaign/CD002/compare?rec=rec-540', '/campaign/VIDU-T10/compare?rec=rec-510']),
+      expect.arrayContaining(['/campaign/CD002/compare', '/campaign/VIDU-T10/compare?rec=rec-510']),
     );
   });
 
