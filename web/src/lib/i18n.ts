@@ -381,11 +381,10 @@ export const viText = {
     pick: {
       active: 'Đề xuất đang hiệu lực',
       examples: 'Ví dụ minh họa (dữ liệu mẫu)',
-      examplesNote: 'Ba ca dùng để kiểm thanh vùng: 11.11 (chỉ chạy khung flash sale), ngày thường (tiếp tục) và ví dụ trang 10 (chưa phân định, kéo hàng dư lên 20.000đ thì pause tốt hơn).',
+      examplesNote: 'Hai ca dùng để kiểm thanh vùng: 11.11 (chỉ chạy khung flash sale, số thật lúc 01:00) và ví dụ trang 10 của đề bài (chưa phân định, kéo hàng dư lên 20.000đ thì pause tốt hơn).',
       open: 'Mở so sánh',
       exampleItems: {
         fryer1111: 'CD002 · 11.11 · Chỉ chạy khung flash sale',
-        fryerNormalDay: 'CD002 · ngày thường 05/11 · Tiếp tục',
         page10: 'Ví dụ trang 10 · 120 sp, 4 giờ, 45.000đ/sp',
       },
       none: 'Chưa có đề xuất nào đang hiệu lực.',

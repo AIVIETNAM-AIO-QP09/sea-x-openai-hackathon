@@ -19,8 +19,8 @@ export class ApiError extends Error {
 /**
  * Maps an API path (without query string) to a fixture file in ./fixtures. The files are a
  * snapshot of the real API at 01:00 on 11.11 (backend/eval/record_fixtures.py), except the
- * illustrative Compare cases rec-540/scn-2280 (CD002 on a normal day) and rec-510/scn-2210
- * (page-10 example), which are hand-written (M3-web.md).
+ * illustrative Compare case rec-510/scn-2210
+ * (page-10 example), which is hand-written (M3-web.md).
  */
 const FIXTURE_ROUTES: Record<string, string> = {
   '/health': 'health',
